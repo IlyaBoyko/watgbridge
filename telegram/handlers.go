@@ -706,7 +706,10 @@ func SyncContactsHandler(b *gotgbot.Bot, c *ext.Context) error {
 
 	// Full sync replays every address book entry, which also stores the
 	// LID->PN mappings they carry (see whatsapp.ContactEventHandler).
+	// whatsmeow only emits those events on a full sync when asked to.
+	waClient.EmitAppStateEventsOnFullSync = true
 	err := waClient.FetchAppState(context.Background(), appstate.WAPatchCriticalUnblockLow, true, false)
+	waClient.EmitAppStateEventsOnFullSync = false
 	if err != nil {
 		return utils.TgReplyWithErrorByContext(b, c, "Failed to sync contacts", err)
 	}
