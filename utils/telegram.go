@@ -83,7 +83,11 @@ func TgGetOrMakeThreadFromWa(waChatId waTypes.JID, tgChatId int64, threadName st
 		if err != nil {
 			return 0, err
 		}
-		waChatId = pn
+		// Unknown LIDs resolve to an empty JID: keep the LID instead of
+		// collapsing every unmapped chat into one thread.
+		if !pn.IsEmpty() {
+			waChatId = pn
+		}
 	}
 	waChatIdString := waChatId.ToNonAD().String()
 	return TgGetOrMakeThreadFromWa_String(waChatIdString, tgChatId, threadName)

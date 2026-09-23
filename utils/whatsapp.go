@@ -223,8 +223,31 @@ func WaGetGroupName(jid types.JID) string {
 	return groupInfo.Name
 }
 
+// WaPreferPN returns the phone-number JID for a user when one is known.
+// primary is the JID WhatsApp addressed the message with (may be a LID);
+// alt is the alternative address WhatsApp sent alongside it (SenderAlt /
+// RecipientAlt), which carries the phone number for LID-addressed messages.
+// A LID->PN mapping learned from alt is persisted for later lookups.
+func WaPreferPN(primary, alt types.JID) types.JID {
+	primary = primary.ToNonAD()
+	if primary.Server != types.HiddenUserServer {
+		return primary
+	}
+	waClient := state.State.WhatsAppClient
+	if !alt.IsEmpty() && alt.Server == types.DefaultUserServer {
+		pn := alt.ToNonAD()
+		_ = waClient.Store.LIDs.PutLIDMapping(context.Background(), primary, pn)
+		return pn
+	}
+	if pn, err := waClient.Store.LIDs.GetPNForLID(context.Background(), primary); err == nil && !pn.IsEmpty() {
+		return pn.ToNonAD()
+	}
+	return primary
+}
+
 func WaGetContactName(jid types.JID) string {
-	if jid.ToNonAD() == state.State.WhatsAppClient.Store.ID.ToNonAD() {
+	jid = jid.ToNonAD()
+	if jid == state.State.WhatsAppClient.Store.ID.ToNonAD() || !jid.IsEmpty() && jid == state.State.WhatsAppClient.Store.GetLID().ToNonAD() {
 		return "You"
 	}
 
@@ -232,7 +255,6 @@ func WaGetContactName(jid types.JID) string {
 	waClient := state.State.WhatsAppClient
 
 	var (
-		pn           types.JID
 		firstName    string
 		fullName     string
 		pushName     string
@@ -241,11 +263,12 @@ func WaGetContactName(jid types.JID) string {
 		err          error
 	)
 
-	if jid.Server == types.HiddenUserServer {
-		pn, err = waClient.Store.LIDs.GetPNForLID(context.Background(), jid)
-		if err == nil {
-			firstName, fullName, pushName, businessName, found, err = database.ContactNameGet(pn.User, pn.Server)
-		}
+	// display is what we show in brackets: the phone number whenever the
+	// LID can be resolved, otherwise the raw id.
+	display := WaPreferPN(jid, types.EmptyJID)
+
+	if display != jid {
+		firstName, fullName, pushName, businessName, found, err = database.ContactNameGet(display.User, display.Server)
 	}
 
 	if !found {
@@ -254,31 +277,37 @@ func WaGetContactName(jid types.JID) string {
 
 	if err == nil && found {
 		if fullName != "" {
-			name = fullName
+			name = fullName + " (" + display.User + ")"
 		} else if businessName != "" {
-			name = businessName + " (" + jid.User + ")"
+			name = businessName + " (" + display.User + ")"
 		} else if pushName != "" {
-			name = pushName + " (" + jid.User + ")"
+			name = pushName + " (" + display.User + ")"
 		} else if firstName != "" {
-			name = firstName + " (" + jid.User + ")"
+			name = firstName + " (" + display.User + ")"
 		}
 	} else {
-		contact, err := waClient.Store.Contacts.GetContact(context.Background(), jid)
-		if err == nil && contact.Found {
+		for _, lookup := range []types.JID{display, jid} {
+			contact, cErr := waClient.Store.Contacts.GetContact(context.Background(), lookup)
+			if cErr != nil || !contact.Found {
+				continue
+			}
 			if contact.FullName != "" {
-				name = contact.FullName
+				name = contact.FullName + " (" + display.User + ")"
 			} else if contact.BusinessName != "" {
-				name = contact.BusinessName + " (" + jid.User + ")"
+				name = contact.BusinessName + " (" + display.User + ")"
 			} else if contact.PushName != "" {
-				name = contact.PushName + " (" + jid.User + ")"
+				name = contact.PushName + " (" + display.User + ")"
 			} else if contact.FirstName != "" {
-				name = contact.FirstName + " (" + jid.User + ")"
+				name = contact.FirstName + " (" + display.User + ")"
+			}
+			if name != "" {
+				break
 			}
 		}
 	}
 
 	if name == "" {
-		name = jid.User
+		name = display.User
 	}
 
 	return name

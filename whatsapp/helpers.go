@@ -159,7 +159,11 @@ func resolveThreadId(info waTypes.MessageInfo, cfg *state.Config, tgBot *gotgbot
 		)
 	}
 
-	targetJID := info.Chat.ToNonAD()
+	alt := info.MessageSource.SenderAlt
+	if info.IsFromMe {
+		alt = info.MessageSource.RecipientAlt
+	}
+	targetJID := utils.WaPreferPN(info.Chat, alt)
 	return utils.TgGetOrMakeThreadFromWa(
 		targetJID, cfg.Telegram.TargetChatID, utils.WaGetContactName(targetJID),
 	)
@@ -177,14 +181,14 @@ func buildBridgedHeader(info waTypes.MessageInfo, cfg *state.Config, isEdited bo
 			text += "🧑: <b>You [other device]</b>\n"
 		} else if info.IsGroup {
 			text += fmt.Sprintf("🧑: <b>%s</b>\n",
-				html.EscapeString(utils.WaGetContactName(info.MessageSource.Sender)))
+				html.EscapeString(utils.WaGetContactName(utils.WaPreferPN(info.MessageSource.Sender, info.MessageSource.SenderAlt))))
 		}
 	} else {
 		if info.IsFromMe {
 			text += "🧑: <b>You [other device]</b>\n"
 		} else {
 			text += fmt.Sprintf("🧑: <b>%s</b>\n",
-				html.EscapeString(utils.WaGetContactName(info.MessageSource.Sender)))
+				html.EscapeString(utils.WaGetContactName(utils.WaPreferPN(info.MessageSource.Sender, info.MessageSource.SenderAlt))))
 		}
 		if info.IsIncomingBroadcast() {
 			text += "👥: <b>(Broadcast)</b>\n"
