@@ -2,10 +2,10 @@ name: Docker Build and Publish
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "local" ]
     tags: [ 'v*.*.*' ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "local" ]
   workflow_dispatch:
 
 env:
