@@ -76,12 +76,14 @@ func TgGetOrMakeThreadFromWa_String(waChatIdString string, tgChatId int64, threa
 	return threadId, nil
 }
 
-func TgGetOrMakeThreadFromWa(waChatId waTypes.JID, tgChatId int64, threadName string) (int64, error) {
+// tgThreadKeyFromWa returns the chat_thread key for a WhatsApp chat,
+// resolving LIDs to phone numbers when the mapping is known.
+func tgThreadKeyFromWa(waChatId waTypes.JID) (string, error) {
 	if waChatId.Server == waTypes.HiddenUserServer {
 		waClient := state.State.WhatsAppClient
 		pn, err := waClient.Store.LIDs.GetPNForLID(context.Background(), waChatId)
 		if err != nil {
-			return 0, err
+			return "", err
 		}
 		// Unknown LIDs resolve to an empty JID: keep the LID instead of
 		// collapsing every unmapped chat into one thread.
@@ -89,7 +91,24 @@ func TgGetOrMakeThreadFromWa(waChatId waTypes.JID, tgChatId int64, threadName st
 			waChatId = pn
 		}
 	}
-	waChatIdString := waChatId.ToNonAD().String()
+	return waChatId.ToNonAD().String(), nil
+}
+
+// TgGetThreadFromWa looks up an existing thread for a WhatsApp chat without
+// creating one.
+func TgGetThreadFromWa(waChatId waTypes.JID, tgChatId int64) (int64, bool, error) {
+	waChatIdString, err := tgThreadKeyFromWa(waChatId)
+	if err != nil {
+		return 0, false, err
+	}
+	return database.ChatThreadGetTgFromWa(waChatIdString, tgChatId)
+}
+
+func TgGetOrMakeThreadFromWa(waChatId waTypes.JID, tgChatId int64, threadName string) (int64, error) {
+	waChatIdString, err := tgThreadKeyFromWa(waChatId)
+	if err != nil {
+		return 0, err
+	}
 	return TgGetOrMakeThreadFromWa_String(waChatIdString, tgChatId, threadName)
 }
 

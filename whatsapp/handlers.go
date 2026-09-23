@@ -1617,9 +1617,28 @@ func PictureEventHandler(v *events.Picture) {
 	}
 }
 
+// infoUpdateHasThread reports whether an info update (picture change etc.)
+// for jid may be posted: either its thread already exists or
+// create_thread_for_info_updates allows creating one.
+func infoUpdateHasThread(jid waTypes.JID, cfg *state.Config, logger *zap.Logger) bool {
+	if cfg.WhatsApp.CreateThreadForInfoUpdates {
+		return true
+	}
+	_, found, err := utils.TgGetThreadFromWa(jid, cfg.Telegram.TargetChatID)
+	if err != nil {
+		logger.Warn("failed to find thread for a WhatsApp chat (handling info update)",
+			zap.String("chat", jid.String()), zap.Error(err))
+		return false
+	}
+	return found
+}
+
 func handleGroupPictureEvent(v *events.Picture, cfg *state.Config, logger *zap.Logger, tgBot *gotgbot.Bot) {
 	// Use the concrete client for proper typing
 	client := state.State.WhatsAppClient
+	if !infoUpdateHasThread(v.JID.ToNonAD(), cfg, logger) {
+		return
+	}
 	tgThreadId, err := utils.TgGetOrMakeThreadFromWa(v.JID.ToNonAD(), cfg.Telegram.TargetChatID,
 		utils.WaGetGroupName(v.JID))
 	if err != nil {
@@ -1656,6 +1675,10 @@ func handleUserPictureEvent(v *events.Picture, cfg *state.Config, logger *zap.Lo
 	}
 	if threadName == "" {
 		threadName = targetJID.String()
+	}
+
+	if !infoUpdateHasThread(targetJID, cfg, logger) {
+		return
 	}
 
 	tgThreadId, err := utils.TgGetOrMakeThreadFromWa(targetJID, cfg.Telegram.TargetChatID, threadName)
