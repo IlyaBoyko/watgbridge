@@ -704,7 +704,9 @@ func SyncContactsHandler(b *gotgbot.Bot, c *ext.Context) error {
 
 	waClient := state.State.WhatsAppClient
 
-	err := waClient.FetchAppState(context.Background(), appstate.WAPatchCriticalUnblockLow, false, false)
+	// Full sync replays every address book entry, which also stores the
+	// LID->PN mappings they carry (see whatsapp.ContactEventHandler).
+	err := waClient.FetchAppState(context.Background(), appstate.WAPatchCriticalUnblockLow, true, false)
 	if err != nil {
 		return utils.TgReplyWithErrorByContext(b, c, "Failed to sync contacts", err)
 	}
@@ -1028,9 +1030,11 @@ func SyncTopicNamesHandler(b *gotgbot.Bot, c *ext.Context) error {
 		return nil
 	}
 
-	if _, err := utils.WaLearnLIDMappingsFromGroups(); err != nil {
+	learned, err := utils.WaLearnLIDMappingsFromGroups()
+	if err != nil {
 		state.State.Logger.Warn("failed to learn LID mappings from groups", zap.Error(err))
 	}
+	var unresolved []string
 
 	chatThreadPairs, err := database.ChatThreadGetAllPairs(c.EffectiveChat.Id)
 	if err != nil {
@@ -1061,6 +1065,8 @@ func SyncTopicNamesHandler(b *gotgbot.Bot, c *ext.Context) error {
 							zap.String("lid", waChatId), zap.Error(err))
 					}
 				}
+			} else {
+				unresolved = append(unresolved, waChatJid.User)
 			}
 		}
 
@@ -1071,14 +1077,23 @@ func SyncTopicNamesHandler(b *gotgbot.Bot, c *ext.Context) error {
 			newName = utils.WaGetContactName(waChatJid)
 		}
 
-		b.EditForumTopic(c.EffectiveChat.Id, tgThreadId, &gotgbot.EditForumTopicOpts{
+		_, err := b.EditForumTopic(c.EffectiveChat.Id, tgThreadId, &gotgbot.EditForumTopicOpts{
 			Name:              newName,
 			IconCustomEmojiId: nil,
 		})
+		if err != nil && !strings.Contains(err.Error(), "TOPIC_NOT_MODIFIED") {
+			state.State.Logger.Warn("failed to rename topic",
+				zap.String("chat", waChatId), zap.Int64("thread", tgThreadId), zap.Error(err))
+		}
 		time.Sleep(5 * time.Second)
 	}
 
-	_, err = c.EffectiveMessage.Reply(b, "Successfully synced topic names", nil)
+	reply := fmt.Sprintf("Successfully synced topic names (learned %d LID mappings from groups)", learned)
+	if len(unresolved) > 0 {
+		reply += fmt.Sprintf("
+No phone number known for %d LIDs: %s", len(unresolved), strings.Join(unresolved, ", "))
+	}
+	_, err = c.EffectiveMessage.Reply(b, reply, nil)
 	return err
 }
 

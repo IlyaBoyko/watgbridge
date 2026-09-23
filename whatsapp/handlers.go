@@ -52,6 +52,9 @@ func WhatsAppEventHandler(evt interface{}) {
 	case *events.PushName:
 		PushNameEventHandler(v)
 
+	case *events.Contact:
+		ContactEventHandler(v)
+
 	case *events.UserAbout:
 		UserAboutEventHandler(v)
 
@@ -1490,6 +1493,28 @@ func PushNameEventHandler(v *events.PushName) {
 		zap.String("new_push_name", v.NewPushName),
 	)
 	database.ContactUpdatePushName(v.JID.User, v.JID.Server, v.NewPushName)
+}
+
+// ContactEventHandler stores the LID->PN mapping carried by address book
+// entries. whatsmeow only saves the contact name, so without this, LIDs of
+// contacts we share no group with never resolve to a phone number.
+func ContactEventHandler(v *events.Contact) {
+	lid, pn := waTypes.EmptyJID, waTypes.EmptyJID
+	switch v.JID.Server {
+	case waTypes.HiddenUserServer:
+		lid = v.JID
+		pn, _ = waTypes.ParseJID(v.Action.GetPnJID())
+	case waTypes.DefaultUserServer:
+		pn = v.JID
+		lid, _ = waTypes.ParseJID(v.Action.GetLidJID())
+	}
+	if lid.Server != waTypes.HiddenUserServer || pn.Server != waTypes.DefaultUserServer {
+		return
+	}
+	if err := state.State.WhatsAppClient.Store.LIDs.PutLIDMapping(context.Background(), lid.ToNonAD(), pn.ToNonAD()); err != nil {
+		state.State.Logger.Warn("failed to store LID mapping from contact",
+			zap.String("lid", lid.String()), zap.String("pn", pn.String()), zap.Error(err))
+	}
 }
 
 func UserAboutEventHandler(v *events.UserAbout) {
