@@ -1028,6 +1028,10 @@ func SyncTopicNamesHandler(b *gotgbot.Bot, c *ext.Context) error {
 		return nil
 	}
 
+	if _, err := utils.WaLearnLIDMappingsFromGroups(); err != nil {
+		state.State.Logger.Warn("failed to learn LID mappings from groups", zap.Error(err))
+	}
+
 	chatThreadPairs, err := database.ChatThreadGetAllPairs(c.EffectiveChat.Id)
 	if err != nil {
 		return utils.TgReplyWithErrorByContext(b, c, "failed to retreive chat thread pairs from database", err)
@@ -1043,6 +1047,22 @@ func SyncTopicNamesHandler(b *gotgbot.Bot, c *ext.Context) error {
 			continue
 		}
 		waChatJid, _ := utils.WaParseJID(waChatId)
+
+		// Threads created for LIDs we could not resolve at the time: move
+		// them to the phone number if it is known now and not taken yet.
+		// The name is still looked up by LID, since WaGetContactName checks
+		// both the phone number and the LID for a contact name.
+		if waChatJid.Server == waTypes.HiddenUserServer {
+			if pn := utils.WaPreferPN(waChatJid, waTypes.EmptyJID); pn != waChatJid.ToNonAD() {
+				_, pnTaken, err := database.ChatThreadGetTgFromWa(pn.String(), c.EffectiveChat.Id)
+				if err == nil && !pnTaken {
+					if err := database.ChatThreadRekey(waChatId, pn.String(), c.EffectiveChat.Id); err != nil {
+						state.State.Logger.Warn("failed to move LID thread to phone number",
+							zap.String("lid", waChatId), zap.Error(err))
+					}
+				}
+			}
+		}
 
 		var newName string
 		if waChatJid.Server == waTypes.GroupServer {

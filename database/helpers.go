@@ -277,6 +277,18 @@ func ChatThreadGetAllPairs(tgChatId int64) ([]ChatThreadPair, error) {
 	return chatPairs, res.Error
 }
 
+// ChatThreadRekey moves a thread pair to a new WhatsApp chat id, e.g. from a
+// LID to the phone-number JID once the mapping becomes known.
+func ChatThreadRekey(oldWaChatId, newWaChatId string, tgChatId int64) error {
+
+	db := state.State.Database
+	res := db.Model(&ChatThreadPair{}).
+		Where("id = ? AND tg_chat_id = ?", oldWaChatId, tgChatId).
+		Update("id", newWaChatId)
+
+	return res.Error
+}
+
 func ChatThreadDropAllPairs() error {
 
 	db := state.State.Database

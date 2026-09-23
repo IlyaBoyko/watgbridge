@@ -245,6 +245,36 @@ func WaPreferPN(primary, alt types.JID) types.JID {
 	return primary
 }
 
+// WaLearnLIDMappingsFromGroups stores the LID->PN mapping of every
+// participant of every joined group. Groups addressed by LID carry the phone
+// number alongside the LID, which is the only way to resolve LIDs of people
+// we have never chatted with directly.
+func WaLearnLIDMappingsFromGroups() (int, error) {
+	waClient := state.State.WhatsAppClient
+	groups, err := waClient.GetJoinedGroups(context.Background())
+	if err != nil {
+		return 0, err
+	}
+	learned := 0
+	for _, group := range groups {
+		for _, participant := range group.Participants {
+			lid, pn := participant.LID, participant.PhoneNumber
+			if participant.JID.Server == types.HiddenUserServer {
+				lid = participant.JID
+			} else if participant.JID.Server == types.DefaultUserServer {
+				pn = participant.JID
+			}
+			if lid.IsEmpty() || pn.IsEmpty() {
+				continue
+			}
+			if err := waClient.Store.LIDs.PutLIDMapping(context.Background(), lid.ToNonAD(), pn.ToNonAD()); err == nil {
+				learned++
+			}
+		}
+	}
+	return learned, nil
+}
+
 func WaGetContactName(jid types.JID) string {
 	jid = jid.ToNonAD()
 	if jid == state.State.WhatsAppClient.Store.ID.ToNonAD() || !jid.IsEmpty() && jid == state.State.WhatsAppClient.Store.GetLID().ToNonAD() {
