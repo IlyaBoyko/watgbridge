@@ -1090,8 +1090,7 @@ func SyncTopicNamesHandler(b *gotgbot.Bot, c *ext.Context) error {
 
 	reply := fmt.Sprintf("Successfully synced topic names (learned %d LID mappings from groups)", learned)
 	if len(unresolved) > 0 {
-		reply += fmt.Sprintf("
-No phone number known for %d LIDs: %s", len(unresolved), strings.Join(unresolved, ", "))
+		reply += fmt.Sprintf("\nNo phone number known for %d LIDs: %s", len(unresolved), strings.Join(unresolved, ", "))
 	}
 	_, err = c.EffectiveMessage.Reply(b, reply, nil)
 	return err
