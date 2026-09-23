@@ -513,7 +513,8 @@ func FindGroupMembersHandler(b *gotgbot.Bot, c *ext.Context) error {
 
 	outputString := fmt.Sprintf("Group members for <i>%s</i>:\n\n", html.EscapeString(groupInfo.Name))
 	for _, participant := range groupInfo.Participants {
-		participantJID := participant.JID.ToNonAD()
+		// Groups addressed by LID carry the phone number separately.
+		participantJID := utils.WaPreferPN(participant.JID, participant.PhoneNumber)
 		memberName := utils.WaGetContactName(participantJID)
 		if memberName == "" {
 			memberName = participantJID.User
