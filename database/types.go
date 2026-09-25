@@ -34,6 +34,7 @@ type ContactName struct {
 	FullName     string
 	PushName     string
 	BusinessName string
+	Username     string // WhatsApp username, without the leading @
 	Server       string
 }
 

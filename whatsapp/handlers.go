@@ -55,6 +55,9 @@ func WhatsAppEventHandler(evt interface{}) {
 	case *events.Contact:
 		ContactEventHandler(v)
 
+	case *events.HistorySync:
+		HistorySyncEventHandler(v)
+
 	case *events.UserAbout:
 		UserAboutEventHandler(v)
 
@@ -1508,12 +1511,46 @@ func ContactEventHandler(v *events.Contact) {
 		pn = v.JID
 		lid, _ = waTypes.ParseJID(v.Action.GetLidJID())
 	}
+	if lid.Server == waTypes.HiddenUserServer {
+		storeUsername(lid, v.Action.GetUsername())
+	}
 	if lid.Server != waTypes.HiddenUserServer || pn.Server != waTypes.DefaultUserServer {
 		return
 	}
 	if err := state.State.WhatsAppClient.Store.LIDs.PutLIDMapping(context.Background(), lid.ToNonAD(), pn.ToNonAD()); err != nil {
 		state.State.Logger.Warn("failed to store LID mapping from contact",
 			zap.String("lid", lid.String()), zap.String("pn", pn.String()), zap.Error(err))
+	}
+}
+
+// HistorySyncEventHandler picks up the usernames of chats the phone shares
+// with us. Messages are not bridged from history sync.
+func HistorySyncEventHandler(v *events.HistorySync) {
+	for _, conv := range v.Data.GetConversations() {
+		if conv.GetUsername() == "" {
+			continue
+		}
+		lid, _ := waTypes.ParseJID(conv.GetLidJID())
+		if lid.Server != waTypes.HiddenUserServer {
+			lid, _ = waTypes.ParseJID(conv.GetID())
+		}
+		if lid.Server == waTypes.HiddenUserServer {
+			storeUsername(lid, conv.GetUsername())
+		}
+	}
+}
+
+// storeUsername keeps usernames keyed by LID: WaGetContactName only shows
+// them for chats whose phone number is hidden.
+func storeUsername(lid waTypes.JID, username string) {
+	username = strings.TrimPrefix(username, "@")
+	if username == "" {
+		return
+	}
+	lid = lid.ToNonAD()
+	if err := database.ContactUpdateUsername(lid.User, lid.Server, username); err != nil {
+		state.State.Logger.Warn("failed to store username",
+			zap.String("lid", lid.String()), zap.Error(err))
 	}
 }
 

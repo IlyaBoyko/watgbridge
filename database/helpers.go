@@ -344,7 +344,8 @@ func ContactNameBulkAddOrUpdate(contacts map[types.JID]types.ContactInfo) error 
 		})
 	}
 
-	res := db.Save(&contactNames)
+	// whatsmeow's contact store has no usernames: keep the ones we stored.
+	res := db.Omit("Username").Save(&contactNames)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -448,6 +449,44 @@ func ContactUpdateBusinessName(waUserId, waUserServer, businessName string) erro
 	res = db.Save(&contact)
 
 	return res.Error
+}
+
+func ContactUpdateUsername(waUserId, waUserServer, username string) error {
+	if username == "" {
+		return nil
+	}
+
+	db := state.State.Database
+
+	var contact ContactName
+	res := db.Where("id = ? AND server = ?", waUserId, waUserServer).Find(&contact)
+
+	if res.Error != nil {
+		return res.Error
+	}
+
+	if contact.ID != waUserId {
+		res = db.Create(&ContactName{
+			ID:       waUserId,
+			Username: username,
+			Server:   waUserServer,
+		})
+		return res.Error
+	}
+
+	contact.Username = username
+	res = db.Save(&contact)
+
+	return res.Error
+}
+
+func ContactUsernameGet(waUserId, waUserServer string) (string, error) {
+	db := state.State.Database
+
+	var contact ContactName
+	res := db.Where("id = ? AND server = ?", waUserId, waUserServer).Find(&contact)
+
+	return contact.Username, res.Error
 }
 
 func UpdateEphemeralSettings(waChatId string, isEphemeral bool, ephemeralTimer uint32) error {

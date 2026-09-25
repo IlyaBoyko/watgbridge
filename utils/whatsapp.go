@@ -293,9 +293,18 @@ func WaGetContactName(jid types.JID) string {
 		err          error
 	)
 
-	// display is what we show in brackets: the phone number whenever the
-	// LID can be resolved, otherwise the raw id.
+	// display is the phone number whenever the LID can be resolved,
+	// otherwise the raw id.
 	display := WaPreferPN(jid, types.EmptyJID)
+
+	// tag is what we show in brackets: the phone number, or for a hidden
+	// number the username if we know it (as WhatsApp itself shows it).
+	tag := display.User
+	if display.Server == types.HiddenUserServer {
+		if username, uErr := database.ContactUsernameGet(display.User, display.Server); uErr == nil && username != "" {
+			tag = "@" + username
+		}
+	}
 
 	if display != jid {
 		firstName, fullName, pushName, businessName, found, err = database.ContactNameGet(display.User, display.Server)
@@ -307,28 +316,31 @@ func WaGetContactName(jid types.JID) string {
 
 	if err == nil && found {
 		if fullName != "" {
-			name = fullName + " (" + display.User + ")"
+			name = fullName + " (" + tag + ")"
 		} else if businessName != "" {
-			name = businessName + " (" + display.User + ")"
+			name = businessName + " (" + tag + ")"
 		} else if pushName != "" {
-			name = pushName + " (" + display.User + ")"
+			name = pushName + " (" + tag + ")"
 		} else if firstName != "" {
-			name = firstName + " (" + display.User + ")"
+			name = firstName + " (" + tag + ")"
 		}
-	} else {
+	}
+	// A row may hold only a username, so fall back to whatsmeow's store
+	// whenever it gave us no name.
+	if name == "" {
 		for _, lookup := range []types.JID{display, jid} {
 			contact, cErr := waClient.Store.Contacts.GetContact(context.Background(), lookup)
 			if cErr != nil || !contact.Found {
 				continue
 			}
 			if contact.FullName != "" {
-				name = contact.FullName + " (" + display.User + ")"
+				name = contact.FullName + " (" + tag + ")"
 			} else if contact.BusinessName != "" {
-				name = contact.BusinessName + " (" + display.User + ")"
+				name = contact.BusinessName + " (" + tag + ")"
 			} else if contact.PushName != "" {
-				name = contact.PushName + " (" + display.User + ")"
+				name = contact.PushName + " (" + tag + ")"
 			} else if contact.FirstName != "" {
-				name = contact.FirstName + " (" + display.User + ")"
+				name = contact.FirstName + " (" + tag + ")"
 			}
 			if name != "" {
 				break
@@ -337,7 +349,7 @@ func WaGetContactName(jid types.JID) string {
 	}
 
 	if name == "" {
-		name = display.User
+		name = tag
 	}
 
 	return name
