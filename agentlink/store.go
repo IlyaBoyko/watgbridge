@@ -35,7 +35,7 @@ func (CommandResultRow) TableName() string { return "agent_command_result" }
 // the bridge's tables, so it is safe on a database that already holds
 // ChatThreadPair and MsgIdPair rows.
 func Migrate(db *gorm.DB) error {
-	return db.AutoMigrate(&OutboxRow{}, &CommandResultRow{})
+	return db.AutoMigrate(&OutboxRow{}, &CommandResultRow{}, &CardRow{})
 }
 
 // Outbox is the persistent queue of Hub events.

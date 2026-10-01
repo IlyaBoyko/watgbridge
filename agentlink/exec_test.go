@@ -170,24 +170,6 @@ func TestSendRejectsNonOneToOneConversations(t *testing.T) {
 	}
 }
 
-func TestCardsAndEditCardAreInvalidUntilH3(t *testing.T) {
-	w := newWorld(t)
-	e := w.executor()
-	card := e.Handle(context.Background(), sendEnv(t, w, "C1", Send{Kind: "card", Text: "Draft", CardID: "draft_1", Buttons: &Buttons{{{ID: "x", Label: "X"}}}}))
-	if card.OK || card.Error != ErrInvalid {
-		t.Errorf("card = %+v", card)
-	}
-	env, _ := NewEnvelope("C2", TypeEditCard, w.clock.Now(), EditCard{
-		Conversation: "wa:60123456789@s.whatsapp.net", CardID: "draft_1", Text: "Sent.", ExpiresAt: FormatTS(w.clock.Now().Add(time.Minute)),
-	})
-	if res := e.Handle(context.Background(), env); res.OK || res.Error != ErrInvalid {
-		t.Errorf("edit_card = %+v", res)
-	}
-	if len(w.wa.Calls()) != 0 || len(w.topics.Posts()) != 0 {
-		t.Error("something was sent")
-	}
-}
-
 func TestSendInvalidPayloads(t *testing.T) {
 	w := newWorld(t)
 	e := w.executor()

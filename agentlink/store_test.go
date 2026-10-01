@@ -28,8 +28,15 @@ func TestMigrateOnPopulatedDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if _, err := NewCardStore(w.db, w.clock).Create(CardRow{CardID: "draft_1", Conversation: "wa:60123456789@s.whatsapp.net"}); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := Migrate(w.db); err != nil { // a restart
 		t.Fatal(err)
+	}
+	if _, ok, _ := NewCardStore(w.db, w.clock).ByCardID("draft_1"); !ok {
+		t.Error("card lost by re-migrate")
 	}
 
 	var threads []database.ChatThreadPair

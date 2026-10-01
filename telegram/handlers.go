@@ -172,6 +172,10 @@ func AddTelegramHandlers() {
 		func(cq *gotgbot.CallbackQuery) bool {
 			return strings.HasPrefix(cq.Data, "revoke")
 		}, RevokeCallbackHandler), DispatcherCallbackHandlerGroup)
+
+	// Presses on the support Agent's cards.
+	dispatcher.AddHandlerToGroup(handlers.NewCallback(
+		agentlink.IsCardCallbackQuery, agentlink.CardCallbackHandler), DispatcherCallbackHandlerGroup)
 }
 
 func BridgeTelegramToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
@@ -306,7 +310,11 @@ func BridgeTelegramToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
 		msgCopy.MessageThreadId = forwardedMsg.MessageThreadId
 
 		finalWaChatJID, _ := utils.WaParseJID(waChatID)
-		return utils.TgSendToWhatsApp(b, c, &msgCopy, msgToReplyTo, finalWaChatJID, participantID, stanzaID, quotedWaChatID, true)
+		// Report the reply to the support Agent as staff speech (no-op when the link is off).
+		reported := agentlink.WatchForwardedMessage(c, &msgCopy, finalWaChatJID)
+		err = utils.TgSendToWhatsApp(b, c, &msgCopy, msgToReplyTo, finalWaChatJID, participantID, stanzaID, quotedWaChatID, true)
+		reported()
+		return err
 
 	} else if participantID != "" {
 		participant, _ := utils.WaParseJID(participantID)
@@ -1178,7 +1186,11 @@ func SendToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
 		return err
 	}
 
-	return utils.TgSendToWhatsApp(b, c, msgToForward, msgToReplyTo, waChatJID, participantID, stanzaID, "", false)
+	// Report it to the support Agent as staff speech (no-op when the link is off).
+	reported := agentlink.WatchForwardedMessage(c, msgToForward, waChatJID)
+	err := utils.TgSendToWhatsApp(b, c, msgToForward, msgToReplyTo, waChatJID, participantID, stanzaID, "", false)
+	reported()
+	return err
 }
 
 func RevokeCommandHandler(b *gotgbot.Bot, c *ext.Context) error {

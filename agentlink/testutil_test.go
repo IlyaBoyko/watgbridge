@@ -126,6 +126,10 @@ type fakeTopics struct {
 	posts []topicPost
 	fail  error
 	seq   int64
+	// cards and edits are kept apart from posts: they are not mirrors.
+	cards    []cardPost
+	edits    []cardEdit
+	editFail error
 }
 
 func (f *fakeTopics) PostText(_ context.Context, thread int64, text string) (int64, error) {
@@ -150,6 +154,51 @@ func (f *fakeTopics) PostMedia(_ context.Context, thread int64, m OutMedia) (int
 	return 9000 + f.seq, nil
 }
 
+type cardPost struct {
+	Thread int64
+	Text   string
+	KB     Keyboard
+}
+
+type cardEdit struct {
+	ChatID, MsgID int64
+	Text          string
+	KB            Keyboard
+}
+
+func (f *fakeTopics) PostCard(_ context.Context, thread int64, text string, kb Keyboard) (int64, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail != nil {
+		return 0, 0, f.fail
+	}
+	f.cards = append(f.cards, cardPost{Thread: thread, Text: text, KB: kb})
+	f.seq++
+	return -1001, 9000 + f.seq, nil
+}
+
+func (f *fakeTopics) EditCardMessage(_ context.Context, chatID, msgID int64, text string, kb Keyboard) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.editFail != nil {
+		return f.editFail
+	}
+	f.edits = append(f.edits, cardEdit{ChatID: chatID, MsgID: msgID, Text: text, KB: kb})
+	return nil
+}
+
+func (f *fakeTopics) Cards() []cardPost {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]cardPost(nil), f.cards...)
+}
+
+func (f *fakeTopics) Edits() []cardEdit {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]cardEdit(nil), f.edits...)
+}
+
 func (f *fakeTopics) Posts() []topicPost {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -166,6 +215,7 @@ type fakeBridge struct {
 	threads      map[string]int64
 	participants map[string]string
 	pairs        []pairRecord
+	fwd          []forwarded
 	selfUser     string
 }
 
@@ -197,6 +247,31 @@ func (b *fakeBridge) RecordPair(waMsgID, key string, tgMsgID, thread int64) erro
 	defer b.mu.Unlock()
 	b.pairs = append(b.pairs, pairRecord{waMsgID, key, tgMsgID, thread})
 	return nil
+}
+
+// forwarded is a pair the bridge made when it sent a staff message on.
+type forwarded struct {
+	TgMsgID, Thread int64
+	WaChat, WaID    string
+}
+
+func (b *fakeBridge) PairIDsFor(tgMsgID, thread int64, waChat string) ([]string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var ids []string
+	for _, f := range b.fwd {
+		if f.TgMsgID == tgMsgID && f.Thread == thread && f.WaChat == waChat {
+			ids = append(ids, f.WaID)
+		}
+	}
+	return ids, nil
+}
+
+// addForwarded plays the part of TgSendToWhatsApp storing its pair.
+func (b *fakeBridge) addForwarded(f forwarded) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.fwd = append(b.fwd, f)
 }
 
 func (b *fakeBridge) Pairs() []pairRecord {
@@ -269,7 +344,7 @@ func (w *world) executor() *Executor {
 	}
 	return &Executor{
 		WA: w.wa, Topics: w.topics, Bridge: w.bridge, Memory: NewCommandMemory(w.db, w.clock),
-		Clock: w.clock, Guard: NewSentGuard(w.clock), Log: w.log,
+		Cards: NewCardStore(w.db, w.clock), Clock: w.clock, Guard: NewSentGuard(w.clock), Log: w.log,
 	}
 }
 

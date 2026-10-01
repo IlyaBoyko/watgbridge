@@ -243,3 +243,61 @@ func OnTopicMessage(c *ext.Context) {
 		h.log.Error("agent link: could not queue staff message", zap.Error(err))
 	}
 }
+
+// isStaffUser is the rule of utils.TgUpdateIsAuthorized (owner and sudo
+// users) without its side effect: that function answers a denied callback
+// query itself, and the link needs to word that answer.
+func isStaffUser(u *gotgbot.User) bool {
+	if u == nil {
+		return false
+	}
+	cfg := state.State.Config
+	return u.Id == cfg.Telegram.OwnerID || slices.Contains(cfg.Telegram.SudoUsersID, u.Id)
+}
+
+// IsCardCallbackQuery tells the dispatcher which callback queries are for the
+// Agent's cards.
+func IsCardCallbackQuery(cq *gotgbot.CallbackQuery) bool {
+	return cq != nil && IsCardCallback(cq.Data)
+}
+
+// CardCallbackHandler handles a press on a button of one of the Agent's
+// cards. It answers every press, with no text when it was passed on.
+func CardCallbackHandler(b *gotgbot.Bot, c *ext.Context) error {
+	cq := c.CallbackQuery
+	if cq == nil {
+		return nil
+	}
+	h := current.Load() // may be nil: a nil Hub is a disabled one
+	in := CallbackInput{Data: cq.Data}
+	if u := c.EffectiveSender.User; isStaffUser(u) {
+		in.Authorized, in.UserID, in.UserName = true, u.Id, tgUserName(u)
+	}
+	_, err := cq.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: h.HandleCallback(in)})
+	return err
+}
+
+// WatchForwardedMessage is called before a command sends a staff-group message
+// on to WhatsApp (/send, a status reply). `forwarded` is the message as the
+// bridge pairs it and `target` the chat it goes to. Call the returned function
+// once the send is over: it reports a staff.message when the send worked and
+// the target is a one-to-one chat. It does nothing when the link is off.
+func WatchForwardedMessage(c *ext.Context, forwarded *gotgbot.Message, target waTypes.JID) (done func()) {
+	h := current.Load()
+	if !h.Enabled() || forwarded == nil {
+		return func() {}
+	}
+	key, err := utils.TgThreadKeyFromWa(target)
+	if err != nil {
+		h.log.Warn("agent link: could not resolve the chat key", zap.Error(err))
+		return func() {}
+	}
+	in := ForwardInput{
+		TgMsgID: forwarded.MessageId, TgThreadID: forwarded.MessageThreadId,
+		WaChat: target.String(), ChatKey: key, Text: topicText(forwarded),
+	}
+	if from := c.EffectiveMessage.From; from != nil {
+		in.TgUserID, in.Name = from.Id, tgUserName(from)
+	}
+	return h.WatchForward(in)
+}

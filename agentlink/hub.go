@@ -45,6 +45,7 @@ type Hub struct {
 	log    *zap.Logger
 	outbox *Outbox
 	mem    *CommandMemory
+	cards  *CardStore
 	guard  *SentGuard
 	link   *Link
 	exec   *Executor
@@ -76,6 +77,7 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 	}
 	h.outbox = NewOutbox(d.DB, d.Clock)
 	h.mem = NewCommandMemory(d.DB, d.Clock)
+	h.cards = NewCardStore(d.DB, d.Clock)
 
 	if cfg.OutboxMaxAgeDays > 0 {
 		cutoff := d.Clock.Now().Add(-time.Duration(cfg.OutboxMaxAgeDays) * 24 * time.Hour)
@@ -88,9 +90,9 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 				zap.Int64("dropped", n), zap.Int("outbox_max_age_days", cfg.OutboxMaxAgeDays))
 		}
 	}
-	h.pruneCommands()
+	h.prune()
 
-	h.exec = &Executor{WA: d.WA, Topics: d.Topics, Bridge: d.Bridge, Memory: h.mem, Clock: d.Clock, Guard: h.guard, Log: d.Log}
+	h.exec = &Executor{WA: d.WA, Topics: d.Topics, Bridge: d.Bridge, Memory: h.mem, Cards: h.cards, Clock: d.Clock, Guard: h.guard, Log: d.Log}
 	opt := d.Link
 	opt.URL, opt.Token, opt.HubID, opt.HubVersion = cfg.URL, cfg.Token, cfg.HubID, d.HubVersion
 	h.link = NewLink(opt, h.outbox, h.exec, d.Notifier, d.Clock, d.Log)
@@ -103,11 +105,17 @@ func (h *Hub) Enabled() bool { return h != nil && h.link != nil }
 // Link exposes the connection (tests).
 func (h *Hub) Link() *Link { return h.link }
 
-func (h *Hub) pruneCommands() {
+// prune forgets old command results and old cards.
+func (h *Hub) prune() {
 	if n, err := h.mem.Prune(); err != nil {
 		h.log.Warn("agent link: could not prune command results", zap.Error(err))
 	} else if n > 0 {
 		h.log.Debug("agent link: pruned old command results", zap.Int64("pruned", n))
+	}
+	if n, err := h.cards.Prune(); err != nil {
+		h.log.Warn("agent link: could not prune old cards", zap.Error(err))
+	} else if n > 0 {
+		h.log.Debug("agent link: pruned old cards", zap.Int64("pruned", n))
 	}
 }
 
@@ -128,7 +136,7 @@ func (h *Hub) Start(ctx context.Context) {
 					case <-ctx.Done():
 						return
 					case <-t.C:
-						h.pruneCommands()
+						h.prune()
 					}
 				}
 			}()
@@ -223,7 +231,13 @@ func (h *Hub) EmitStaffMessage(in StaffInput) error {
 	if h.guard.Has(in.HubMsgID) {
 		return nil
 	}
-	if in.Text == "" && len(in.Media) == 0 {
+	// From the phone, an empty message is a reaction or a protocol stub, not
+	// a reply. From the topic or /send it already reached the customer (the
+	// caller saw its WhatsApp id), and topic media is not downloaded, so a
+	// photo reply arrives here with no text and no media. It must still be
+	// reported: it is the signal that a human answered, which cancels an
+	// /ai_after draft.
+	if in.Source == "phone" && in.Text == "" && len(in.Media) == 0 {
 		return nil
 	}
 	author := StaffAuthor{Source: in.Source, Name: in.Name}

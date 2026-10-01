@@ -162,3 +162,19 @@ func (bridgeState) RecordPair(waMsgID, chatKey string, tgMsgID, threadID int64) 
 	return database.MsgIdAddNewPair(waMsgID, c.Store.ID.String(), chatKey,
 		state.State.Config.Telegram.TargetChatID, tgMsgID, threadID)
 }
+
+func (bridgeState) PairIDsFor(tgMsgID, tgThreadID int64, waChat string) ([]string, error) {
+	var pairs []database.MsgIdPair
+	err := state.State.Database.
+		Where("tg_chat_id = ? AND tg_msg_id = ? AND tg_thread_id = ? AND wa_chat_id = ?",
+			state.State.Config.Telegram.TargetChatID, tgMsgID, tgThreadID, waChat).
+		Find(&pairs).Error
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(pairs))
+	for i, p := range pairs {
+		ids[i] = p.ID
+	}
+	return ids, nil
+}

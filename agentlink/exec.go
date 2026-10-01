@@ -45,6 +45,12 @@ type OutMedia struct {
 type TopicPoster interface {
 	PostText(ctx context.Context, threadID int64, text string) (tgMsgID int64, err error)
 	PostMedia(ctx context.Context, threadID int64, m OutMedia) (tgMsgID int64, err error)
+	// PostCard posts text with an inline keyboard (none when it is empty) and
+	// says which chat and message it landed in.
+	PostCard(ctx context.Context, threadID int64, text string, kb Keyboard) (tgChatID, tgMsgID int64, err error)
+	// EditCardMessage replaces a card's text and its whole keyboard (an empty
+	// keyboard removes it).
+	EditCardMessage(ctx context.Context, tgChatID, tgMsgID int64, text string, kb Keyboard) error
 }
 
 // Bridge is the part of the bridge's own state the link needs.
@@ -61,6 +67,11 @@ type Bridge interface {
 	// message the Hub itself sent, so staff replies to its mirror work like
 	// replies to any bridged message.
 	RecordPair(waMsgID, chatKey string, tgMsgID, threadID int64) error
+	// PairIDsFor returns the WhatsApp ids paired with a message of the staff
+	// group that was sent on to waChat. Telegram message ids are not unique
+	// per WhatsApp message: a forwarded message that already had a pair gets
+	// another one, so callers compare before and after.
+	PairIDsFor(tgMsgID, tgThreadID int64, waChat string) ([]string, error)
 }
 
 // OwnerNotifier tells the bridge's owner something on Telegram.
@@ -105,6 +116,7 @@ type Executor struct {
 	Topics TopicPoster
 	Bridge Bridge
 	Memory *CommandMemory
+	Cards  *CardStore
 	Clock  Clock
 	Guard  *SentGuard
 	Log    *zap.Logger
@@ -151,15 +163,16 @@ func (e *Executor) run(ctx context.Context, env Envelope) Result {
 			return e.sendReply(ctx, p)
 		case "note":
 			return e.sendNote(ctx, p)
+		case "card":
+			return e.sendCard(ctx, p)
 		default:
-			// Cards and buttons arrive with H3.
 			return fail(ErrInvalid)
 		}
 	case *EditCard:
 		if e.expired(p.ExpiresAt) {
 			return fail(ErrExpired)
 		}
-		return fail(ErrInvalid)
+		return e.editCard(ctx, p)
 	default:
 		return fail(ErrInvalid)
 	}

@@ -270,3 +270,29 @@ func TestEmitStaffMessage(t *testing.T) {
 		t.Errorf("topic = %+v", topic)
 	}
 }
+
+// A staff photo sent from the topic reaches the customer but carries no text
+// and no downloaded media. It is still a human answer, so it must be reported
+// (it cancels an /ai_after draft). An empty message from the phone is a
+// reaction or protocol stub, and is not.
+func TestEmptyStaffMessageReportedFromTopicNotFromPhone(t *testing.T) {
+	w := newWorld(t)
+	h := w.hub("ws://unused")
+
+	if err := h.EmitStaffMessage(StaffInput{ChatKey: "60123456789@s.whatsapp.net", TopicID: 1234, HubMsgID: "WA-PHOTO", Source: "topic", TgUserID: 704338780, Name: "Ilya"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.EmitStaffMessage(StaffInput{ChatKey: "60123456789@s.whatsapp.net", HubMsgID: "WA-REACTION", Source: "phone"}); err != nil {
+		t.Fatal(err)
+	}
+
+	evs := queuedEvents(t, h)
+	if len(evs) != 1 {
+		t.Fatalf("%d events queued, want 1 (the topic photo only)", len(evs))
+	}
+	var got StaffMessage
+	_ = json.Unmarshal(evs[0].Payload, &got)
+	if got.HubMsgID != "WA-PHOTO" || got.Author.Source != "topic" || got.Text != "" || len(got.Media) != 0 {
+		t.Errorf("event = %+v", got)
+	}
+}
