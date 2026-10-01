@@ -1,0 +1,27 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000A4",
+  "type": "send",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "kind": "reply",
+    "text": "DuitNow — Clarus Molecular Sdn Bhd (Maybank)\nUse your order reference as the payment reference.",
+    "media": [
+      {
+        "kind": "image",
+        "mime": "image/png",
+        "filename": "duitnow.png",
+        "size": 70,
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+      }
+    ],
+    "copyables": [
+      {
+        "label": "Account number",
+        "value": "5141 2345 6789"
+      }
+    ],
+    "expires_at": "2026-10-01T09:40:12.345Z"
+  }
+}

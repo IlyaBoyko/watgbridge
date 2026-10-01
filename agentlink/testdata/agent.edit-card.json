@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000A7",
+  "type": "edit_card",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "card_id": "draft_01JB00000000000000000000AA",
+    "text": "Sent by Ilya.",
+    "buttons": [],
+    "expires_at": "2026-10-01T09:40:12.345Z"
+  }
+}

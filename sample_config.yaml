@@ -43,6 +43,13 @@ backup:
   cron_schedule: "0 3 * * *"            # Cron de 5 campos (min hora dia mês semana). Exemplo: todo dia às 03:00
   thread_name: Database Backups          # Used only when mode is thread
 
+agent:
+  enabled: false                         # Off: no connection and no events. Messages starting with /ai_ are still never forwarded to WhatsApp.
+  url: ""                                # The support Agent's WebSocket address, e.g. wss://agent.example.com/hub (ws:// is fine for local development)
+  token: ""                              # This Hub's bearer token, issued by the Agent
+  hub_id: ""                             # This Hub's name at the Agent, e.g. pi-my
+  outbox_max_age_days: 0                 # 0 = keep events until the Agent acknowledges them (protocol default). Set N > 0 only as a disk-safety valve: unacknowledged events older than N days are dropped at startup
+
 whatsapp:
   session_name: watgbridge        # This will appear in your Linked Devices in mobile app
   # Which WhatsApp client the session registers as. "android" (default) and

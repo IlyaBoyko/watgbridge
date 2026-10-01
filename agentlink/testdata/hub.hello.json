@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "id": "01JB0000000000000000000001",
+  "type": "hello",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "hub_id": "pi-my",
+    "protocol": 1,
+    "hub_version": "1.13.11-clarus.1",
+    "channels": ["wa", "tg"]
+  }
+}

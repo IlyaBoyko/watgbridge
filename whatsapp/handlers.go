@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"watgbridge/agentlink"
 	"watgbridge/database"
 	"watgbridge/state"
 	"watgbridge/utils"
@@ -478,6 +479,9 @@ func handleMessageEvent(cfg *state.Config, v *events.Message) {
 	} else {
 		MessageFromOthersEventHandler(text, v, isEdited, isDocument)
 	}
+
+	// Report the message to the support Agent (no-op when the link is off).
+	agentlink.OnWhatsAppMessage(v, text, isEdited)
 }
 
 // ============================================================

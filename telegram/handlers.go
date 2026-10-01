@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"watgbridge/agentlink"
 	"watgbridge/database"
 	"watgbridge/state"
 	"watgbridge/utils"
@@ -184,6 +185,11 @@ func BridgeTelegramToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
 		}
 	}
 
+	// /ai_* messages are for the support Agent and never reach WhatsApp.
+	if agentlink.HandleTopicCommand(b, c) {
+		return nil
+	}
+
 	var (
 		waClient     = state.State.WhatsAppClient
 		msgToForward = c.EffectiveMessage
@@ -309,7 +315,12 @@ func BridgeTelegramToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
 
 	waChatJID, _ := utils.WaParseJID(waChatID)
 
-	return utils.TgSendToWhatsApp(b, c, msgToForward, msgToReplyTo, waChatJID, participantID, stanzaID, quotedWaChatID, stanzaID != "")
+	err = utils.TgSendToWhatsApp(b, c, msgToForward, msgToReplyTo, waChatJID, participantID, stanzaID, quotedWaChatID, stanzaID != "")
+	if err == nil {
+		// Report it to the support Agent as staff speech (no-op when the link is off).
+		agentlink.OnTopicMessage(c)
+	}
+	return err
 }
 
 // BridgeTelegramEditedToWhatsAppHandler handles edited Telegram messages and mirrors the edit to WhatsApp

@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000A9",
+  "type": "error",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "ref_id": "01JB0000000000000000000099",
+    "code": "unknown_type",
+    "message": "type \"presence\" is not part of protocol v1"
+  }
+}

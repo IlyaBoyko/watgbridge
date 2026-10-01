@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "id": "01JB0000000000000000000003",
+  "type": "customer.message",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "conversation": "tg:5550001111",
+    "topic_id": "1250",
+    "hub_msg_id": "5550001111:42",
+    "contact": {
+      "name": "Wei",
+      "username": "wei_kl"
+    },
+    "text": "Is BPC-157 in stock?",
+    "media": [],
+    "reply_to": "5550001111:40",
+    "edit_of": "5550001111:41"
+  }
+}

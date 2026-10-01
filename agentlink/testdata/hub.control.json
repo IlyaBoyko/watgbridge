@@ -1,0 +1,17 @@
+{
+  "v": 1,
+  "id": "01JB0000000000000000000006",
+  "type": "control",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "topic_id": "1234",
+    "command": "ai_once",
+    "args": "he wants Penang shipping time, push the 2-vial bundle nicely",
+    "target_hub_msg_id": "3EB0A1B2C3D4E5F6",
+    "author": {
+      "tg_user_id": "704338780",
+      "name": "Ilya"
+    }
+  }
+}

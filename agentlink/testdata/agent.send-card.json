@@ -1,0 +1,30 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000A6",
+  "type": "send",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "kind": "card",
+    "card_id": "draft_01JB00000000000000000000AA",
+    "text": "Draft, sends at 17:42:\nBoleh! Penang biasanya 2-3 hari bekerja 🙂",
+    "media": [],
+    "buttons": [
+      [
+        {
+          "id": "send_now",
+          "label": "Send now"
+        },
+        {
+          "id": "edit",
+          "label": "Edit"
+        },
+        {
+          "id": "cancel",
+          "label": "Cancel"
+        }
+      ]
+    ],
+    "expires_at": "2026-10-01T09:40:12.345Z"
+  }
+}

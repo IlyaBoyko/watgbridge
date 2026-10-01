@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"watgbridge/agentlink"
 	"watgbridge/database"
 	"watgbridge/modules"
 	"watgbridge/state"
@@ -203,6 +204,12 @@ func main() {
 		}
 	})
 
+	agentCtx, stopAgent := context.WithCancel(context.Background())
+	defer stopAgent()
+	if err := agentlink.Start(agentCtx); err != nil {
+		logger.Fatal("failed to start the agent link", zap.Error(err))
+	}
+
 	state.State.WhatsAppClient.AddEventHandler(whatsapp.WhatsAppEventHandler)
 	telegram.AddTelegramHandlers()
 	modules.LoadModuleHandlers()
@@ -233,4 +240,7 @@ func main() {
 	utils.StartAutomaticDatabaseBackups()
 
 	state.State.TelegramUpdater.Idle()
+
+	stopAgent()
+	agentlink.Stop(5 * time.Second)
 }

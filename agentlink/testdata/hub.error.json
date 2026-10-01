@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "id": "01JB000000000000000000000A",
+  "type": "error",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "ref_id": "01JB00000000000000000000A3",
+    "code": "schema",
+    "message": "send.expires_at missing"
+  }
+}

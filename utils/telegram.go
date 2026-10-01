@@ -94,6 +94,12 @@ func tgThreadKeyFromWa(waChatId waTypes.JID) (string, error) {
 	return waChatId.ToNonAD().String(), nil
 }
 
+// TgThreadKeyFromWa exports tgThreadKeyFromWa for the agentlink package, which
+// must name a chat exactly the way its topic was keyed.
+func TgThreadKeyFromWa(waChatId waTypes.JID) (string, error) {
+	return tgThreadKeyFromWa(waChatId)
+}
+
 // TgGetThreadFromWa looks up an existing thread for a WhatsApp chat without
 // creating one.
 func TgGetThreadFromWa(waChatId waTypes.JID, tgChatId int64) (int64, bool, error) {

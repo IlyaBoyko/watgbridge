@@ -88,6 +88,15 @@ type Config struct {
 		CronSchedule string `yaml:"cron_schedule"`
 		ThreadName   string `yaml:"thread_name"`
 	} `yaml:"backup"`
+
+	// Link to the support Agent (see the agentlink package).
+	Agent struct {
+		Enabled          bool   `yaml:"enabled"`
+		URL              string `yaml:"url"`
+		Token            string `yaml:"token"`
+		HubID            string `yaml:"hub_id"`
+		OutboxMaxAgeDays int    `yaml:"outbox_max_age_days"`
+	} `yaml:"agent"`
 }
 
 func (cfg *Config) LoadConfig() error {
@@ -172,4 +181,6 @@ func (cfg *Config) SetDefaults() {
 	cfg.Backup.Mode = "none"
 	cfg.Backup.CronSchedule = "0 0 * * *"
 	cfg.Backup.ThreadName = "Database Backups"
+
+	cfg.Agent.OutboxMaxAgeDays = 0 // keep undelivered events until the Agent acknowledges them
 }

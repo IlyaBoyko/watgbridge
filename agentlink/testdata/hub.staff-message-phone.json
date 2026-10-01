@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "id": "01JB0000000000000000000004",
+  "type": "staff.message",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "topic_id": "1234",
+    "hub_msg_id": "3EB0FFEE00112233",
+    "author": {
+      "source": "phone"
+    },
+    "text": "Boleh boss, 2-3 hari sampai",
+    "media": []
+  }
+}

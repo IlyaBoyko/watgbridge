@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000A5",
+  "type": "send",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "kind": "note",
+    "text": "Slip received for CM-261001-AB12 (RM 240). Waiting for verifier.",
+    "media": [],
+    "expires_at": "2026-10-01T09:40:12.345Z"
+  }
+}

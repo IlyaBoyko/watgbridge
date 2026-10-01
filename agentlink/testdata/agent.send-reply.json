@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000A1",
+  "type": "send",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "kind": "reply",
+    "text": "Boleh! Penang biasanya 2-3 hari bekerja 🙂",
+    "media": [],
+    "reply_to": "3EB0A1B2C3D4E5F6",
+    "expires_at": "2026-10-01T09:40:12.345Z"
+  }
+}

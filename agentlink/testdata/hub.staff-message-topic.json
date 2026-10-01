@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "id": "01JB0000000000000000000005",
+  "type": "staff.message",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "topic_id": "1234",
+    "hub_msg_id": "3EB0FFEE00112244",
+    "author": {
+      "source": "topic",
+      "tg_user_id": "704338780",
+      "name": "Ilya"
+    },
+    "text": "Order confirmed, thank you!",
+    "media": [],
+    "reply_to": "3EB0A1B2C3D4E5F6"
+  }
+}

@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/PaulSonOfLars/gotgbot/v2 v2.0.0-rc.35
+	github.com/coder/websocket v1.8.15
 	github.com/emersion/go-vcard v0.0.0-20260618161152-d854b7e0e2d3
 	github.com/forPelevin/gomoji v1.4.1
 	github.com/go-co-op/gocron v1.37.0
@@ -30,7 +31,6 @@ require (
 	github.com/Benau/go_rlottie v0.0.0-20210807002906-98c1b2421989 // indirect
 	github.com/av-elier/go-decimal-to-rational v0.0.0-20250603203441-f39a07f43ff3 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect
-	github.com/coder/websocket v1.8.15 // indirect
 	github.com/elliotchance/orderedmap/v3 v3.1.1 // indirect
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
