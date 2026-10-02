@@ -25,7 +25,8 @@ var current atomic.Pointer[Hub]
 
 // Start builds the link from the bridge's config and runs it until ctx ends.
 // With `agent.enabled: false` it opens no connection and writes nothing.
-func Start(ctx context.Context) error {
+// customer is the Telegram customer bot, or nil when that bot is off.
+func Start(ctx context.Context, customer CustomerChannel) error {
 	cfg := state.State.Config
 	h, err := NewHub(Config{
 		Enabled:          cfg.Agent.Enabled,
@@ -37,6 +38,7 @@ func Start(ctx context.Context) error {
 		DB:         state.State.Database,
 		Bridge:     bridgeState{},
 		WA:         waSender{},
+		Customer:   customer,
 		Topics:     topicPoster{},
 		Notifier:   ownerNotifier{},
 		Log:        state.State.Logger.Named("agentlink"),
@@ -156,6 +158,26 @@ func OnWhatsAppMessage(v *events.Message, text string, isEdited bool) {
 	}
 }
 
+// EmitCustomerMessage queues a customer.message from the Telegram customer
+// bot. It does nothing when the link is off.
+func EmitCustomerMessage(in CustomerInput) error {
+	h := current.Load() // may be nil: a nil Hub is a disabled one
+	if !h.Enabled() {
+		return nil
+	}
+	return h.EmitCustomerMessage(in)
+}
+
+// EmitStaffMessage queues a staff.message for a reply a human sent in a
+// customer-bot topic. It does nothing when the link is off.
+func EmitStaffMessage(in StaffInput) error {
+	h := current.Load()
+	if !h.Enabled() {
+		return nil
+	}
+	return h.EmitStaffMessage(in)
+}
+
 func tgUserName(u *gotgbot.User) string {
 	return strings.TrimSpace(u.FirstName + " " + u.LastName)
 }
@@ -200,6 +222,9 @@ func HandleTopicCommand(b *gotgbot.Bot, c *ext.Context) bool {
 			in.ChatKey = key
 		}
 		in.TargetWAMsgID = quotedWaID(msg)
+		if _, isTg := ParseTgChatKey(in.ChatKey); isTg && h.deps.Customer != nil && msg.ReplyToMessage != nil {
+			in.TargetWAMsgID = h.deps.Customer.HubMsgIDOfTopicMsg(msg.MessageThreadId, msg.ReplyToMessage.MessageId)
+		}
 		if msg.From != nil {
 			in.AuthorID, in.AuthorName = msg.From.Id, tgUserName(msg.From)
 		}

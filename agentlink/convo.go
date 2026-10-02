@@ -2,6 +2,7 @@ package agentlink
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	waTypes "go.mau.fi/whatsmeow/types"
@@ -34,7 +35,11 @@ func OneToOneJID(s string, isSelf func(waTypes.JID) bool) (waTypes.JID, error) {
 
 // ConversationFor maps a chat_thread key (what the bridge stores for a chat)
 // to the protocol's conversation id. The "wa:" prefix exists only on the wire.
+// A Telegram customer's key (`tg:<user_id>`) is its own conversation id.
 func ConversationFor(chatKey string, isSelf func(waTypes.JID) bool) (string, error) {
+	if _, ok := ParseTgChatKey(chatKey); ok {
+		return chatKey, nil
+	}
 	jid, err := OneToOneJID(chatKey, isSelf)
 	if err != nil {
 		return "", err
@@ -68,4 +73,26 @@ func PhoneFor(chatKey string) string {
 		}
 	}
 	return "+" + jid.User
+}
+
+/* ------------------------------------------------------ telegram customers -- */
+
+const tgConvPrefix = "tg:"
+
+// TgChatKey is the chat_thread key (and the conversation id) of a customer of
+// the Telegram customer bot. The private chat id equals the user id.
+func TgChatKey(userID int64) string { return tgConvPrefix + strconv.FormatInt(userID, 10) }
+
+// ParseTgChatKey recognises "tg:<user_id>" and returns the user id. Ids are
+// positive: negative ones are groups and channels, which are never customers.
+func ParseTgChatKey(s string) (int64, bool) {
+	rest, ok := strings.CutPrefix(s, tgConvPrefix)
+	if !ok {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(rest, 10, 64)
+	if err != nil || id <= 0 || strconv.FormatInt(id, 10) != rest {
+		return 0, false
+	}
+	return id, true
 }

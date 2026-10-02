@@ -307,6 +307,7 @@ type world struct {
 	topics   *fakeTopics
 	bridge   *fakeBridge
 	notifier *fakeNotifier
+	customer *fakeCustomer
 	log      *zap.Logger
 }
 
@@ -314,13 +315,13 @@ func newWorld(t *testing.T) *world {
 	t.Helper()
 	return &world{
 		t: t, db: newTestDB(t), clock: newFakeClock(), wa: &fakeWA{}, topics: &fakeTopics{},
-		bridge: newFakeBridge(), notifier: &fakeNotifier{}, log: zap.NewNop(),
+		bridge: newFakeBridge(), notifier: &fakeNotifier{}, customer: &fakeCustomer{targets: map[[2]int64]string{}}, log: zap.NewNop(),
 	}
 }
 
 func (w *world) deps() Deps {
 	return Deps{
-		DB: w.db, Bridge: w.bridge, WA: w.wa, Topics: w.topics, Notifier: w.notifier,
+		DB: w.db, Bridge: w.bridge, WA: w.wa, Customer: w.customer, Topics: w.topics, Notifier: w.notifier,
 		Clock: w.clock, Log: w.log, HubVersion: "test",
 		Link: LinkOptions{
 			PingInterval: 50 * time.Millisecond, DeadAfter: 2 * time.Second, HandshakeTimeout: 2 * time.Second,
@@ -343,7 +344,7 @@ func (w *world) executor() *Executor {
 		w.t.Fatal(err)
 	}
 	return &Executor{
-		WA: w.wa, Topics: w.topics, Bridge: w.bridge, Memory: NewCommandMemory(w.db, w.clock),
+		WA: w.wa, Topics: w.topics, Customer: w.customer, Bridge: w.bridge, Memory: NewCommandMemory(w.db, w.clock),
 		Cards: NewCardStore(w.db, w.clock), Clock: w.clock, Guard: NewSentGuard(w.clock), Log: w.log,
 	}
 }
@@ -499,4 +500,72 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+/* ------------------------------------------------------ customer channel -- */
+
+type custSend struct {
+	File   bool
+	ChatID int64
+	Text   CustomerText
+	Media  CustomerFile
+}
+
+type custPair struct{ Chat, CustMsg, Thread, TopicMsg int64 }
+
+// fakeCustomer is the Telegram customer bot's channel.
+type fakeCustomer struct {
+	mu     sync.Mutex
+	sends  []custSend
+	pairs  []custPair
+	failIf func(custSend) error
+	seq    int64
+	// targets answers HubMsgIDOfTopicMsg, keyed by thread and topic message.
+	targets map[[2]int64]string
+}
+
+func (f *fakeCustomer) record(s custSend) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failIf != nil {
+		if err := f.failIf(s); err != nil {
+			return 0, err
+		}
+	}
+	f.sends = append(f.sends, s)
+	f.seq++
+	return 7000 + f.seq, nil
+}
+
+func (f *fakeCustomer) SendText(_ context.Context, chatID int64, m CustomerText) (int64, error) {
+	return f.record(custSend{ChatID: chatID, Text: m})
+}
+
+func (f *fakeCustomer) SendFile(_ context.Context, chatID int64, m CustomerFile) (int64, error) {
+	return f.record(custSend{File: true, ChatID: chatID, Media: m})
+}
+
+func (f *fakeCustomer) RecordPair(chat, custMsg, thread, topicMsg int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pairs = append(f.pairs, custPair{chat, custMsg, thread, topicMsg})
+	return nil
+}
+
+func (f *fakeCustomer) HubMsgIDOfTopicMsg(thread, topicMsg int64) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.targets[[2]int64{thread, topicMsg}]
+}
+
+func (f *fakeCustomer) Sends() []custSend {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]custSend(nil), f.sends...)
+}
+
+func (f *fakeCustomer) Pairs() []custPair {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]custPair(nil), f.pairs...)
 }

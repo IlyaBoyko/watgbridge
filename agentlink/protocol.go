@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"time"
 	"unicode/utf8"
@@ -87,6 +88,16 @@ type Copyable struct {
 }
 
 type Copyables = []Copyable
+
+// SendLink is the single link under a reply (protocol section 5). Used through
+// a pointer, like Copyables.
+type SendLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+}
+
+// MaxLinkLabel is the longest link label the protocol allows.
+const MaxLinkLabel = 64
 
 // Limits from protocol section 5.
 const (
@@ -177,6 +188,7 @@ type Send struct {
 	Buttons      *Buttons   `json:"buttons,omitempty"`
 	CardID       string     `json:"card_id,omitempty"`
 	Copyables    *Copyables `json:"copyables,omitempty"`
+	Link         *SendLink  `json:"link,omitempty"`
 	ExpiresAt    string     `json:"expires_at"`
 }
 
@@ -337,6 +349,22 @@ func validateCopyables(c *Copyables) error {
 	return nil
 }
 
+// validateLink needs an http(s) URL: a Telegram URL button rejects anything
+// else, and WhatsApp only links those.
+func validateLink(l *SendLink) error {
+	if l == nil {
+		return nil
+	}
+	if n := utf8.RuneCountInString(l.Label); n == 0 || n > MaxLinkLabel {
+		return fmt.Errorf("link.label must be 1 to %d characters", MaxLinkLabel)
+	}
+	u, err := url.Parse(l.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("link.url is not an http(s) URL")
+	}
+	return nil
+}
+
 func validateISO(field, v string) error {
 	if _, err := time.Parse(time.RFC3339Nano, v); err != nil {
 		return fmt.Errorf("%s is missing or not an ISO-8601 time", field)
@@ -363,6 +391,9 @@ func (s *Send) Validate() error {
 		return err
 	}
 	if err := validateCopyables(s.Copyables); err != nil {
+		return err
+	}
+	if err := validateLink(s.Link); err != nil {
 		return err
 	}
 	return validateISO("send.expires_at", s.ExpiresAt)

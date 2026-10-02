@@ -1,0 +1,17 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000AB",
+  "type": "send",
+  "ts": "2026-10-01T09:30:12.345Z",
+  "payload": {
+    "conversation": "tg:5550001111",
+    "kind": "reply",
+    "text": "Got your order CM-261002-QX7P. Total RM 240.00, payment by DuitNow.",
+    "media": [],
+    "link": {
+      "label": "View your order",
+      "url": "https://clarusmolecular.com/order/cm-261002-qx7p-AbCdEfGhIjKlMnOpQrStUv"
+    },
+    "expires_at": "2026-10-01T09:40:12.345Z"
+  }
+}

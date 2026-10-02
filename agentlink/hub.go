@@ -23,9 +23,11 @@ type Config struct {
 
 // Deps is everything the link needs from the outside world.
 type Deps struct {
-	DB         *gorm.DB
-	Bridge     Bridge
-	WA         WhatsAppSender
+	DB     *gorm.DB
+	Bridge Bridge
+	WA     WhatsAppSender
+	// Customer is the Telegram customer bot; nil when it is off.
+	Customer   CustomerChannel
 	Topics     TopicPoster
 	Notifier   OwnerNotifier
 	Clock      Clock
@@ -92,8 +94,14 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 	}
 	h.prune()
 
-	h.exec = &Executor{WA: d.WA, Topics: d.Topics, Bridge: d.Bridge, Memory: h.mem, Cards: h.cards, Clock: d.Clock, Guard: h.guard, Log: d.Log}
+	h.exec = &Executor{WA: d.WA, Topics: d.Topics, Customer: d.Customer, Bridge: d.Bridge, Memory: h.mem, Cards: h.cards, Clock: d.Clock, Guard: h.guard, Log: d.Log}
 	opt := d.Link
+	if len(opt.Channels) == 0 {
+		opt.Channels = []string{"wa"}
+		if d.Customer != nil {
+			opt.Channels = append(opt.Channels, "tg")
+		}
+	}
 	opt.URL, opt.Token, opt.HubID, opt.HubVersion = cfg.URL, cfg.Token, cfg.HubID, d.HubVersion
 	h.link = NewLink(opt, h.outbox, h.exec, d.Notifier, d.Clock, d.Log)
 	return h, nil
@@ -163,6 +171,7 @@ type CustomerInput struct {
 	TopicID     int64
 	HubMsgID    string
 	ContactName string
+	Username    string // the Telegram username, without the @
 	Text        string
 	Media       []Media
 	ReplyTo     string
@@ -195,7 +204,7 @@ func (h *Hub) EmitCustomerMessage(in CustomerInput) error {
 		Conversation: conv,
 		TopicID:      topicString(in.TopicID),
 		HubMsgID:     in.HubMsgID,
-		Contact:      Contact{Name: in.ContactName, Phone: PhoneFor(in.ChatKey)},
+		Contact:      Contact{Name: in.ContactName, Phone: PhoneFor(in.ChatKey), Username: in.Username},
 		Text:         in.Text,
 		Media:        nonNilMedia(in.Media),
 		ReplyTo:      in.ReplyTo,

@@ -2,6 +2,7 @@ package agentlink
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -294,5 +295,103 @@ func TestEmptyStaffMessageReportedFromTopicNotFromPhone(t *testing.T) {
 	_ = json.Unmarshal(evs[0].Payload, &got)
 	if got.HubMsgID != "WA-PHOTO" || got.Author.Source != "topic" || got.Text != "" || len(got.Media) != 0 {
 		t.Errorf("event = %+v", got)
+	}
+}
+
+func TestHelloChannelsFollowTheCustomerBot(t *testing.T) {
+	for name, tc := range map[string]struct {
+		customer CustomerChannel
+		want     []string
+	}{
+		"customer bot on":  {&fakeCustomer{}, []string{"wa", "tg"}},
+		"customer bot off": {nil, []string{"wa"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld(t)
+			d := w.deps()
+			d.Customer = tc.customer
+			h, err := NewHub(Config{Enabled: true, URL: "ws://unused", Token: "secret-token", HubID: "pi-test"}, d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := h.link.opt.Channels; !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("channels = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A4: a Telegram customer's message carries the tg: conversation, the
+// <chat>:<message> id, the contact's name and username, the quote and the edit.
+func TestEmitCustomerMessageForTelegram(t *testing.T) {
+	w := newWorld(t)
+	h := w.hub("ws://unused")
+
+	in := CustomerInput{
+		ChatKey: "tg:5550001111", TopicID: 1250, HubMsgID: "5550001111:42", ContactName: "Wei", Username: "wei_kl",
+		Text: "Is BPC-157 in stock?", ReplyTo: "5550001111:40", EditOf: "5550001111:41",
+	}
+	if err := h.EmitCustomerMessage(in); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.EmitCustomerMessage(in); err != nil {
+		t.Fatal(err)
+	}
+	evs := queuedEvents(t, h)
+	if len(evs) != 1 {
+		t.Fatalf("%d events queued, want 1", len(evs))
+	}
+	if want := EventID(TypeCustomerMessage, "tg:5550001111", "5550001111:42"); evs[0].ID != want {
+		t.Errorf("id = %q, want %q", evs[0].ID, want)
+	}
+	var got CustomerMessage
+	_ = json.Unmarshal(evs[0].Payload, &got)
+	want := CustomerMessage{
+		Conversation: "tg:5550001111", TopicID: "1250", HubMsgID: "5550001111:42",
+		Contact: Contact{Name: "Wei", Username: "wei_kl"}, Text: "Is BPC-157 in stock?", Media: []Media{},
+		ReplyTo: "5550001111:40", EditOf: "5550001111:41",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("payload = %+v", got)
+	}
+
+	// Ids that are not users produce nothing.
+	for _, key := range []string{"tg:-1001234", "tg:abc"} {
+		if err := h.EmitCustomerMessage(CustomerInput{ChatKey: key, HubMsgID: "x", Text: "hi"}); err == nil {
+			t.Errorf("%s produced an event", key)
+		}
+	}
+}
+
+// A5: a staff reply in a Telegram customer's topic, photo-only included, is
+// reported with the customer-chat id of the message the customer received.
+func TestEmitStaffMessageForTelegram(t *testing.T) {
+	w := newWorld(t)
+	h := w.hub("ws://unused")
+
+	if err := h.EmitStaffMessage(StaffInput{
+		ChatKey: "tg:5550001111", TopicID: 1250, HubMsgID: "5550001111:7001", Source: "topic",
+		TgUserID: 704338780, Name: "Ilya", Text: "In stock", ReplyTo: "5550001111:42",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.EmitStaffMessage(StaffInput{
+		ChatKey: "tg:5550001111", TopicID: 1250, HubMsgID: "5550001111:7002", Source: "topic", TgUserID: 704338780, Name: "Ilya",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	evs := queuedEvents(t, h)
+	if len(evs) != 2 {
+		t.Fatalf("%d events queued, want 2 (the photo-only reply included)", len(evs))
+	}
+	var first, photo StaffMessage
+	_ = json.Unmarshal(evs[0].Payload, &first)
+	_ = json.Unmarshal(evs[1].Payload, &photo)
+	if first.Conversation != "tg:5550001111" || first.HubMsgID != "5550001111:7001" || first.ReplyTo != "5550001111:42" ||
+		first.Author != (StaffAuthor{Source: "topic", TgUserID: "704338780", Name: "Ilya"}) {
+		t.Errorf("first = %+v", first)
+	}
+	if photo.HubMsgID != "5550001111:7002" || photo.Text != "" || len(photo.Media) != 0 {
+		t.Errorf("photo = %+v", photo)
 	}
 }

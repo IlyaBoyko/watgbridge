@@ -14,6 +14,7 @@ import (
 	"watgbridge/modules"
 	"watgbridge/state"
 	"watgbridge/telegram"
+	"watgbridge/tgcustomer"
 	"watgbridge/utils"
 	"watgbridge/whatsapp"
 
@@ -206,13 +207,31 @@ func main() {
 
 	agentCtx, stopAgent := context.WithCancel(context.Background())
 	defer stopAgent()
-	if err := agentlink.Start(agentCtx); err != nil {
+	// The customer bot is built first so the agent link can send through it,
+	// but only polls once the link is up: a customer's message must be
+	// reportable the moment it is handled.
+	customerBot, err := tgcustomer.Init()
+	if err != nil {
+		logger.Fatal("failed to set up the customer bot", zap.Error(err))
+	}
+	var customerChannel agentlink.CustomerChannel
+	if customerBot != nil {
+		customerChannel = customerBot
+	}
+	if err := agentlink.Start(agentCtx, customerChannel); err != nil {
 		logger.Fatal("failed to start the agent link", zap.Error(err))
 	}
 
 	state.State.WhatsAppClient.AddEventHandler(whatsapp.WhatsAppEventHandler)
 	telegram.AddTelegramHandlers()
 	modules.LoadModuleHandlers()
+
+	// Enabling the customer bot takes it over: its webhook is deleted here.
+	if customerBot != nil {
+		if err := customerBot.Start(); err != nil {
+			logger.Fatal("failed to start the customer bot", zap.Error(err))
+		}
+	}
 
 	if !cfg.Telegram.SkipSettingCommands {
 		err = utils.TgRegisterBotCommands(state.State.TelegramBot, state.State.TelegramCommands...)
@@ -241,6 +260,9 @@ func main() {
 
 	state.State.TelegramUpdater.Idle()
 
+	if customerBot != nil {
+		customerBot.Stop()
+	}
 	stopAgent()
 	agentlink.Stop(5 * time.Second)
 }

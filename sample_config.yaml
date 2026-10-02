@@ -50,6 +50,14 @@ agent:
   hub_id: ""                             # This Hub's name at the Agent, e.g. pi-my
   outbox_max_age_days: 0                 # 0 = keep events until the Agent acknowledges them (protocol default). Set N > 0 only as a disk-safety valve: unacknowledged events older than N days are dropped at startup
 
+# A second Telegram bot that talks to customers in private chats. Every customer
+# who messages it gets a topic in target_chat_id, and staff replies in that
+# topic reach the customer from this bot. The bot in the telegram: section above
+# keeps owning the staff group.
+customer_bot:
+  enabled: false                         # true TAKES OVER this bot: its webhook is deleted at start, so a website that receives the bot's updates through a webhook stops receiving them (a bot can have only one consumer). Leave false until that is intended.
+  bot_token: ""                          # The customer bot's own token, never the staff bot's. Customers' /start <payload> reaches the Agent as an ordinary customer message.
+
 whatsapp:
   session_name: watgbridge        # This will appear in your Linked Devices in mobile app
   # Which WhatsApp client the session registers as. "android" (default) and

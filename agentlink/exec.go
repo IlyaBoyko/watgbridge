@@ -114,12 +114,15 @@ func (g *SentGuard) Has(id string) bool {
 type Executor struct {
 	WA     WhatsAppSender
 	Topics TopicPoster
-	Bridge Bridge
-	Memory *CommandMemory
-	Cards  *CardStore
-	Clock  Clock
-	Guard  *SentGuard
-	Log    *zap.Logger
+	// Customer is the Telegram customer bot's channel. Nil when that bot is
+	// off, which makes every tg: conversation unknown.
+	Customer CustomerChannel
+	Bridge   Bridge
+	Memory   *CommandMemory
+	Cards    *CardStore
+	Clock    Clock
+	Guard    *SentGuard
+	Log      *zap.Logger
 }
 
 const (
@@ -187,6 +190,10 @@ func (e *Executor) expired(expiresAt string) bool {
 }
 
 func (e *Executor) chatFor(conversation string) (string, bool) {
+	// A Telegram customer's topic is keyed by its conversation id.
+	if _, ok := ParseTgChatKey(conversation); ok {
+		return conversation, true
+	}
 	key, err := ChatKeyFor(conversation, e.Bridge.IsSelf)
 	if err != nil {
 		return "", false
@@ -233,6 +240,9 @@ func decodeOutMedia(ms []Media) ([]OutMedia, bool) {
 }
 
 func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
+	if _, ok := ParseTgChatKey(p.Conversation); ok {
+		return e.sendReplyTelegram(ctx, p)
+	}
 	key, ok := e.chatFor(p.Conversation)
 	if !ok {
 		return fail(ErrUnknownConversation)
@@ -266,13 +276,16 @@ func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 		quote = &Quote{StanzaID: p.ReplyTo, Participant: participant}
 	}
 
+	// plain is what the mirror shows of the message, before the copyables and
+	// the link are added to it.
 	type item struct {
 		media   *OutMedia
 		caption string
+		plain   string
 	}
 	var items []item
 	if len(media) == 0 {
-		items = []item{{caption: p.Text}}
+		items = []item{{caption: p.Text, plain: p.Text}}
 	}
 	for i := range media {
 		m := media[i]
@@ -281,7 +294,14 @@ func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 			caption = p.Text
 		}
 		m.Caption = caption
-		items = append(items, item{media: &m, caption: caption})
+		items = append(items, item{media: &m, caption: caption, plain: caption})
+	}
+	// WhatsApp links a plain URL, so the link is a line of the main message.
+	if p.Link != nil {
+		items[0].caption = appendLine(items[0].caption, linkLine(*p.Link))
+		if items[0].media != nil {
+			items[0].media.Caption = items[0].caption
+		}
 	}
 
 	var first string
@@ -317,13 +337,14 @@ func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 		if e.Guard != nil {
 			e.Guard.Mark(sent.ID)
 		}
-		// One mirror post: the main content, plus the copyables as label: value lines.
-		body := it.caption
+		// One mirror post: the main content, plus the copyables and the link as
+		// label: value lines.
+		body := it.plain
 		if i == 0 && len(copyables) > 0 {
-			if body != "" {
-				body += "\n"
-			}
-			body += copyableLines(copyables)
+			body = appendLine(body, copyableLines(copyables))
+		}
+		if i == 0 && p.Link != nil {
+			body = appendLine(body, linkLine(*p.Link))
 		}
 		e.mirror(ctx, key, thread, sent.ID, it.media, body)
 	}
@@ -340,6 +361,15 @@ func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 	e.noteUnsent(ctx, thread, unsent)
 	return Result{OK: true, HubMsgID: first, DeliveredAt: FormatTS(e.Clock.Now())}
 }
+
+func appendLine(body, line string) string {
+	if body == "" {
+		return line
+	}
+	return body + "\n" + line
+}
+
+func linkLine(l SendLink) string { return l.Label + ": " + l.URL }
 
 func copyableLines(cs []Copyable) string {
 	lines := make([]string, len(cs))

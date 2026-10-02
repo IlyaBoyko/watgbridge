@@ -1,0 +1,230 @@
+package agentlink
+
+import (
+	"context"
+	"errors"
+	"html"
+	"strconv"
+	"strings"
+	"unicode/utf16"
+
+	"go.uber.org/zap"
+)
+
+// Telegram's limits for what one message may hold, counted in UTF-16 code
+// units after formatting is parsed.
+const (
+	tgCaptionLimit = 1024
+	tgTextLimit    = 4096
+)
+
+func tgLen(s string) int { return len(utf16.Encode([]rune(s))) }
+
+// tgMessage is one message the customer bot sends for a `reply`.
+type tgMessage struct {
+	file    *OutMedia // nil for a text message
+	html    string    // the text, or the file's caption
+	plain   string    // what the topic mirror shows of this message
+	buttons [][]CustomerButton
+}
+
+// planTelegramReply decides which messages a reply becomes (protocol §5):
+//
+//   - copyables are appended to the text as `label: <code>value</code>` lines,
+//     and every other character is HTML-escaped;
+//   - one copy_text button per copyable, then the link in a row of its own;
+//   - media carries the text as its caption, unless that would pass Telegram's
+//     caption limit: then the media goes first and the text follows as a second
+//     message, which also holds the buttons that belong to it.
+//
+// It reports false when the text cannot fit in a message at all.
+func planTelegramReply(text string, media []OutMedia, copyables []Copyable, link *SendLink) ([]tgMessage, bool) {
+	textHTML, textPlain := html.EscapeString(text), text
+	var kb [][]CustomerButton
+	for _, c := range copyables {
+		textHTML = appendLine(textHTML, html.EscapeString(c.Label)+": <code>"+html.EscapeString(c.Value)+"</code>")
+		textPlain = appendLine(textPlain, c.Label+": "+c.Value)
+		kb = append(kb, []CustomerButton{{Text: "Copy " + c.Label, CopyText: c.Value}})
+	}
+	linkPlain := ""
+	if link != nil {
+		kb = append(kb, []CustomerButton{{Text: link.Label, URL: link.URL}})
+		linkPlain = linkLine(*link)
+	}
+	// withLink is what the mirror shows of a message that carries the keyboard.
+	withLink := func(plain string, carriesKeyboard bool) string {
+		if carriesKeyboard && linkPlain != "" {
+			return appendLine(plain, linkPlain)
+		}
+		return plain
+	}
+
+	if len(media) == 0 {
+		if tgLen(textPlain) > tgTextLimit {
+			return nil, false
+		}
+		return []tgMessage{{html: textHTML, plain: withLink(textPlain, true), buttons: kb}}, true
+	}
+
+	var out []tgMessage
+	for i := range media {
+		m := media[i]
+		msg := tgMessage{file: &m, html: html.EscapeString(m.Caption), plain: m.Caption}
+		if i == 0 {
+			switch {
+			case textPlain == "":
+				msg.buttons = kb
+				msg.plain = withLink(msg.plain, true)
+			case tgLen(textPlain) <= tgCaptionLimit:
+				msg.html, msg.plain, msg.buttons = textHTML, withLink(textPlain, true), kb
+			default:
+				out = append(out, msg)
+				if tgLen(textPlain) > tgTextLimit {
+					return nil, false
+				}
+				msg = tgMessage{html: textHTML, plain: withLink(textPlain, true), buttons: kb}
+			}
+		}
+		out = append(out, msg)
+	}
+	return out, true
+}
+
+// customerErrCode is the result code of a failed send to a customer.
+func customerErrCode(err error) string {
+	switch {
+	case errors.Is(err, ErrCustomerBlocked):
+		return ErrCustomerUnreachable
+	case errors.Is(err, ErrCustomerRateLimited):
+		return ErrRateLimited
+	default:
+		return ErrInternal
+	}
+}
+
+// quotedCustomerMsg turns a reply_to hub_msg_id (`<chat>:<message>`) into the
+// message id to quote in the customer's chat, or 0 when it names no message of
+// that chat. An unquotable reply is still sent: the answer matters more.
+func quotedCustomerMsg(chatID int64, replyTo string) int64 {
+	chat, msg, ok := strings.Cut(replyTo, ":")
+	if !ok {
+		return 0
+	}
+	c, err1 := strconv.ParseInt(chat, 10, 64)
+	m, err2 := strconv.ParseInt(msg, 10, 64)
+	if err1 != nil || err2 != nil || c != chatID || m <= 0 {
+		return 0
+	}
+	return m
+}
+
+// HubMsgIDForTelegram is the hub_msg_id of a message in a customer's chat.
+func HubMsgIDForTelegram(chatID, msgID int64) string {
+	return strconv.FormatInt(chatID, 10) + ":" + strconv.FormatInt(msgID, 10)
+}
+
+func (e *Executor) sendReplyTelegram(ctx context.Context, p *Send) Result {
+	userID, _ := ParseTgChatKey(p.Conversation)
+	if e.Customer == nil {
+		return fail(ErrUnknownConversation)
+	}
+	media, ok := decodeOutMedia(p.Media)
+	if !ok || (len(media) == 0 && strings.TrimSpace(p.Text) == "") {
+		return fail(ErrInvalid)
+	}
+	// Without a topic there is nowhere to mirror to; the Hub does not know
+	// this customer.
+	thread, found, err := e.Bridge.ThreadFor(p.Conversation)
+	if err != nil {
+		e.Log.Error("agent link: topic lookup failed", zap.Error(err))
+		return fail(ErrInternal)
+	}
+	if !found {
+		return fail(ErrUnknownConversation)
+	}
+
+	var copyables []Copyable
+	if p.Copyables != nil {
+		copyables = *p.Copyables
+	}
+	plan, ok := planTelegramReply(p.Text, media, copyables, p.Link)
+	if !ok {
+		return fail(ErrInvalid)
+	}
+	quote := quotedCustomerMsg(userID, p.ReplyTo)
+
+	var first string
+	for i, m := range plan {
+		// Only the first message quotes; the rest are part of the same answer.
+		var replyTo int64
+		if i == 0 {
+			replyTo = quote
+		}
+		var id int64
+		var err error
+		if m.file == nil {
+			id, err = e.Customer.SendText(ctx, userID, CustomerText{HTML: m.html, Buttons: m.buttons, ReplyTo: replyTo})
+		} else {
+			id, err = e.Customer.SendFile(ctx, userID, CustomerFile{
+				Kind: m.file.Kind, Data: m.file.Data, Filename: m.file.Filename, Mime: m.file.Mime,
+				HTMLCaption: m.html, Buttons: m.buttons, ReplyTo: replyTo,
+			})
+		}
+		if err != nil {
+			e.Log.Warn("agent link: Telegram send to a customer failed", zap.Error(err))
+			if i == 0 {
+				return fail(customerErrCode(err))
+			}
+			// The customer already has part of the answer; staff must know.
+			if _, err := e.Topics.PostText(ctx, thread, notePrefix+"Only part of the last answer reached the customer, please check."); err != nil {
+				e.Log.Error("agent link: could not post the note about a partial answer", zap.Error(err))
+			}
+			return Result{OK: false, Error: ErrInternal, HubMsgID: first, DeliveredAt: FormatTS(e.Clock.Now())}
+		}
+		hubID := HubMsgIDForTelegram(userID, id)
+		if i == 0 {
+			first = hubID
+		}
+		if e.Guard != nil {
+			e.Guard.Mark(hubID)
+		}
+		e.mirrorTelegram(ctx, userID, thread, id, m)
+	}
+	return Result{OK: true, HubMsgID: first, DeliveredAt: FormatTS(e.Clock.Now())}
+}
+
+// mirrorTelegram posts what was just sent into the topic and pairs the posts
+// with the customer's message. A failure is logged and nothing more: the
+// customer already has the message.
+func (e *Executor) mirrorTelegram(ctx context.Context, chatID, thread, customerMsgID int64, m tgMessage) {
+	body := strings.TrimSpace(mirrorPrefix + m.plain)
+	var topicIDs []int64
+	post := func(id int64, err error) bool {
+		if err != nil {
+			e.Log.Error("agent link: could not mirror the reply into the topic", zap.Int64("customer_msg_id", customerMsgID), zap.Error(err))
+			return false
+		}
+		topicIDs = append(topicIDs, id)
+		return true
+	}
+	switch {
+	case m.file == nil:
+		post(e.Topics.PostText(ctx, thread, body))
+	case tgLen(body) <= tgCaptionLimit:
+		mm := *m.file
+		mm.Caption = body
+		post(e.Topics.PostMedia(ctx, thread, mm))
+	default:
+		// The topic's own caption limit is the same: the text follows the file.
+		mm := *m.file
+		mm.Caption = strings.TrimSpace(mirrorPrefix)
+		if post(e.Topics.PostMedia(ctx, thread, mm)) {
+			post(e.Topics.PostText(ctx, thread, body))
+		}
+	}
+	for _, id := range topicIDs {
+		if err := e.Customer.RecordPair(chatID, customerMsgID, thread, id); err != nil {
+			e.Log.Error("agent link: could not record the mirror's message pair", zap.String("hub_msg_id", HubMsgIDForTelegram(chatID, customerMsgID)), zap.Error(err))
+		}
+	}
+}

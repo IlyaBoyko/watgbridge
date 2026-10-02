@@ -18,6 +18,7 @@ import (
 	"watgbridge/agentlink"
 	"watgbridge/database"
 	"watgbridge/state"
+	"watgbridge/tgcustomer"
 	"watgbridge/utils"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
@@ -191,6 +192,12 @@ func BridgeTelegramToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
 
 	// /ai_* messages are for the support Agent and never reach WhatsApp.
 	if agentlink.HandleTopicCommand(b, c) {
+		return nil
+	}
+
+	// A topic of a Telegram customer is answered through the customer bot,
+	// never through WhatsApp.
+	if tgcustomer.HandleTopicMessage(b, c) {
 		return nil
 	}
 
@@ -1069,7 +1076,7 @@ func SyncTopicNamesHandler(b *gotgbot.Bot, c *ext.Context) error {
 			tgThreadId = pair.TgThreadId
 		)
 
-		if waChatId == "status@broadcast" || waChatId == "calls" || waChatId == "mentions" {
+		if waChatId == "status@broadcast" || waChatId == "calls" || waChatId == "mentions" || strings.HasPrefix(waChatId, "tg:") {
 			continue
 		}
 		waChatJid, _ := utils.WaParseJID(waChatId)

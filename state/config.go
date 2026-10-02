@@ -97,6 +97,13 @@ type Config struct {
 		HubID            string `yaml:"hub_id"`
 		OutboxMaxAgeDays int    `yaml:"outbox_max_age_days"`
 	} `yaml:"agent"`
+
+	// A second bot that talks to customers (see the tgcustomer package).
+	// Enabling it deletes the bot's webhook: it becomes a long-polling bot.
+	CustomerBot struct {
+		Enabled  bool   `yaml:"enabled"`
+		BotToken string `yaml:"bot_token"`
+	} `yaml:"customer_bot"`
 }
 
 func (cfg *Config) LoadConfig() error {
