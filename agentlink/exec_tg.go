@@ -24,8 +24,11 @@ func tgLen(s string) int { return len(utf16.Encode([]rune(s))) }
 type tgMessage struct {
 	file    *OutMedia // nil for a text message
 	html    string    // the text, or the file's caption
-	plain   string    // what the topic mirror shows of this message
 	buttons [][]CustomerButton
+	// body and lines are what the topic mirror shows of this message: the
+	// reply's own text or caption, and the copyables and link as extra lines.
+	body  string
+	lines []string
 }
 
 // planTelegramReply decides which messages a reply becomes (protocol §5):
@@ -46,43 +49,36 @@ func planTelegramReply(text string, media []OutMedia, copyables []Copyable, link
 		textPlain = appendLine(textPlain, c.Label+": "+c.Value)
 		kb = append(kb, []CustomerButton{{Text: "Copy " + c.Label, CopyText: c.Value}})
 	}
-	linkPlain := ""
 	if link != nil {
 		kb = append(kb, []CustomerButton{{Text: link.Label, URL: link.URL}})
-		linkPlain = linkLine(*link)
 	}
-	// withLink is what the mirror shows of a message that carries the keyboard.
-	withLink := func(plain string, carriesKeyboard bool) string {
-		if carriesKeyboard && linkPlain != "" {
-			return appendLine(plain, linkPlain)
-		}
-		return plain
-	}
+	// The mirror lists the copyables and the link on the message that carries
+	// the keyboard.
+	lines := extraLines(copyables, link)
 
 	if len(media) == 0 {
 		if tgLen(textPlain) > tgTextLimit {
 			return nil, false
 		}
-		return []tgMessage{{html: textHTML, plain: withLink(textPlain, true), buttons: kb}}, true
+		return []tgMessage{{html: textHTML, body: text, lines: lines, buttons: kb}}, true
 	}
 
 	var out []tgMessage
 	for i := range media {
 		m := media[i]
-		msg := tgMessage{file: &m, html: html.EscapeString(m.Caption), plain: m.Caption}
+		msg := tgMessage{file: &m, html: html.EscapeString(m.Caption), body: m.Caption}
 		if i == 0 {
 			switch {
 			case textPlain == "":
-				msg.buttons = kb
-				msg.plain = withLink(msg.plain, true)
+				msg.buttons, msg.lines = kb, lines
 			case tgLen(textPlain) <= tgCaptionLimit:
-				msg.html, msg.plain, msg.buttons = textHTML, withLink(textPlain, true), kb
+				msg.html, msg.body, msg.lines, msg.buttons = textHTML, text, lines, kb
 			default:
 				out = append(out, msg)
 				if tgLen(textPlain) > tgTextLimit {
 					return nil, false
 				}
-				msg = tgMessage{html: textHTML, plain: withLink(textPlain, true), buttons: kb}
+				msg = tgMessage{html: textHTML, body: text, lines: lines, buttons: kb}
 			}
 		}
 		out = append(out, msg)
@@ -154,6 +150,7 @@ func (e *Executor) sendReplyTelegram(ctx context.Context, p *Send) Result {
 	quote := quotedCustomerMsg(userID, p.ReplyTo)
 
 	var first string
+	mirrored := true
 	for i, m := range plan {
 		// Only the first message quotes; the rest are part of the same answer.
 		var replyTo int64
@@ -176,7 +173,7 @@ func (e *Executor) sendReplyTelegram(ctx context.Context, p *Send) Result {
 				return fail(customerErrCode(err))
 			}
 			// The customer already has part of the answer; staff must know.
-			if _, err := e.Topics.PostText(ctx, thread, notePrefix+"Only part of the last answer reached the customer, please check."); err != nil {
+			if _, err := e.Topics.PostText(ctx, thread, plainTopic(notePrefix+"Only part of the last answer reached the customer, please check.")); err != nil {
 				e.Log.Error("agent link: could not post the note about a partial answer", zap.Error(err))
 			}
 			return Result{OK: false, Error: ErrInternal, HubMsgID: first, DeliveredAt: FormatTS(e.Clock.Now())}
@@ -188,16 +185,23 @@ func (e *Executor) sendReplyTelegram(ctx context.Context, p *Send) Result {
 		if e.Guard != nil {
 			e.Guard.Mark(hubID)
 		}
-		e.mirrorTelegram(ctx, userID, thread, id, m)
+		parts := mirrorParts{Text: m.body, Lines: m.lines}
+		if i == len(plan)-1 {
+			parts.Signature = p.Signature
+		}
+		if !e.mirrorTelegram(ctx, userID, thread, id, m, parts) {
+			mirrored = false
+		}
 	}
+	e.replaceCard(ctx, p, mirrored)
 	return Result{OK: true, HubMsgID: first, DeliveredAt: FormatTS(e.Clock.Now())}
 }
 
 // mirrorTelegram posts what was just sent into the topic and pairs the posts
 // with the customer's message. A failure is logged and nothing more: the
-// customer already has the message.
-func (e *Executor) mirrorTelegram(ctx context.Context, chatID, thread, customerMsgID int64, m tgMessage) {
-	body := strings.TrimSpace(mirrorPrefix + m.plain)
+// customer already has the message. It reports whether the whole mirror is in
+// the topic.
+func (e *Executor) mirrorTelegram(ctx context.Context, chatID, thread, customerMsgID int64, m tgMessage, parts mirrorParts) bool {
 	var topicIDs []int64
 	post := func(id int64, err error) bool {
 		if err != nil {
@@ -207,19 +211,21 @@ func (e *Executor) mirrorTelegram(ctx context.Context, chatID, thread, customerM
 		topicIDs = append(topicIDs, id)
 		return true
 	}
-	switch {
-	case m.file == nil:
-		post(e.Topics.PostText(ctx, thread, body))
-	case tgLen(body) <= tgCaptionLimit:
+	posted := true
+	if m.file == nil {
+		text, _ := renderMirror(parts, tgTextLimit)
+		posted = post(e.Topics.PostText(ctx, thread, text))
+	} else if caption, fits := renderMirror(parts, tgCaptionLimit); fits {
 		mm := *m.file
-		mm.Caption = body
-		post(e.Topics.PostMedia(ctx, thread, mm))
-	default:
+		mm.Caption, mm.HTML = caption.Text, caption.HTML
+		posted = post(e.Topics.PostMedia(ctx, thread, mm))
+	} else {
 		// The topic's own caption limit is the same: the text follows the file.
 		mm := *m.file
 		mm.Caption = strings.TrimSpace(mirrorPrefix)
-		if post(e.Topics.PostMedia(ctx, thread, mm)) {
-			post(e.Topics.PostText(ctx, thread, body))
+		if posted = post(e.Topics.PostMedia(ctx, thread, mm)); posted {
+			text, _ := renderMirror(parts, tgTextLimit)
+			posted = post(e.Topics.PostText(ctx, thread, text))
 		}
 	}
 	for _, id := range topicIDs {
@@ -227,4 +233,5 @@ func (e *Executor) mirrorTelegram(ctx context.Context, chatID, thread, customerM
 			e.Log.Error("agent link: could not record the mirror's message pair", zap.String("hub_msg_id", HubMsgIDForTelegram(chatID, customerMsgID)), zap.Error(err))
 		}
 	}
+	return posted
 }

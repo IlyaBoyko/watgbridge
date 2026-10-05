@@ -103,6 +103,8 @@ const MaxLinkLabel = 64
 const (
 	MaxCopyables     = 5
 	MaxCopyableValue = 256
+	MaxSignature     = 80
+	MaxTitle         = 120
 )
 
 type Hello struct {
@@ -189,13 +191,19 @@ type Send struct {
 	CardID       string     `json:"card_id,omitempty"`
 	Copyables    *Copyables `json:"copyables,omitempty"`
 	Link         *SendLink  `json:"link,omitempty"`
-	ExpiresAt    string     `json:"expires_at"`
+	// Signature, ReplacesCard and Title shape how the topic looks (protocol
+	// section 5b). All optional: an older Agent sends none of them.
+	Signature    string `json:"signature,omitempty"`
+	ReplacesCard string `json:"replaces_card,omitempty"`
+	Title        string `json:"title,omitempty"`
+	ExpiresAt    string `json:"expires_at"`
 }
 
 type EditCard struct {
 	Conversation string   `json:"conversation"`
 	CardID       string   `json:"card_id"`
 	Text         string   `json:"text"`
+	Title        string   `json:"title,omitempty"`
 	Buttons      *Buttons `json:"buttons,omitempty"`
 	ExpiresAt    string   `json:"expires_at"`
 }
@@ -396,6 +404,12 @@ func (s *Send) Validate() error {
 	if err := validateLink(s.Link); err != nil {
 		return err
 	}
+	if utf8.RuneCountInString(s.Signature) > MaxSignature {
+		return fmt.Errorf("send.signature is longer than %d characters", MaxSignature)
+	}
+	if utf8.RuneCountInString(s.Title) > MaxTitle {
+		return fmt.Errorf("send.title is longer than %d characters", MaxTitle)
+	}
 	return validateISO("send.expires_at", s.ExpiresAt)
 }
 
@@ -408,6 +422,9 @@ func (e *EditCard) Validate() error {
 	}
 	if err := validateButtons(e.Buttons); err != nil {
 		return err
+	}
+	if utf8.RuneCountInString(e.Title) > MaxTitle {
+		return fmt.Errorf("edit_card.title is longer than %d characters", MaxTitle)
 	}
 	return validateISO("edit_card.expires_at", e.ExpiresAt)
 }

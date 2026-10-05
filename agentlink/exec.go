@@ -37,20 +37,24 @@ type OutMedia struct {
 	Mime     string
 	Filename string
 	Caption  string
+	// HTML says Caption is Telegram HTML, already escaped (see TopicText).
+	HTML bool
 }
 
-// TopicPoster posts into a forum topic of the staff group as the bot. Text is
-// plain; the implementation does whatever escaping Telegram needs. Only the
-// glue in glue_tg.go implements it against gotgbot.
+// TopicPoster posts into a forum topic of the staff group as the bot. A
+// TopicText is either plain, which the implementation escapes, or ready-made
+// HTML. Only the glue in glue_tg.go implements it against gotgbot.
 type TopicPoster interface {
-	PostText(ctx context.Context, threadID int64, text string) (tgMsgID int64, err error)
+	PostText(ctx context.Context, threadID int64, text TopicText) (tgMsgID int64, err error)
 	PostMedia(ctx context.Context, threadID int64, m OutMedia) (tgMsgID int64, err error)
 	// PostCard posts text with an inline keyboard (none when it is empty) and
 	// says which chat and message it landed in.
-	PostCard(ctx context.Context, threadID int64, text string, kb Keyboard) (tgChatID, tgMsgID int64, err error)
+	PostCard(ctx context.Context, threadID int64, text TopicText, kb Keyboard) (tgChatID, tgMsgID int64, err error)
 	// EditCardMessage replaces a card's text and its whole keyboard (an empty
 	// keyboard removes it).
-	EditCardMessage(ctx context.Context, tgChatID, tgMsgID int64, text string, kb Keyboard) error
+	EditCardMessage(ctx context.Context, tgChatID, tgMsgID int64, text TopicText, kb Keyboard) error
+	// DeleteMessage removes a message the bot posted.
+	DeleteMessage(ctx context.Context, tgChatID, tgMsgID int64) error
 }
 
 // Bridge is the part of the bridge's own state the link needs.
@@ -220,7 +224,7 @@ func (e *Executor) sendNote(ctx context.Context, p *Send) Result {
 	if !found {
 		return fail(ErrUnknownConversation)
 	}
-	if _, err := e.Topics.PostText(ctx, thread, notePrefix+p.Text); err != nil {
+	if _, err := e.Topics.PostText(ctx, thread, renderNote(p.Text)); err != nil {
 		e.Log.Error("agent link: could not post note", zap.Error(err))
 		return fail(ErrInternal)
 	}
@@ -308,6 +312,7 @@ func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 	}
 
 	var first string
+	mirrored := true
 	for i, it := range items {
 		// Only the first message quotes; the rest are part of the same answer.
 		q := quote
@@ -341,15 +346,17 @@ func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 			e.Guard.Mark(sent.ID)
 		}
 		// One mirror post: the main content, plus the copyables and the link as
-		// label: value lines.
-		body := it.plain
-		if i == 0 && len(copyables) > 0 {
-			body = appendLine(body, copyableLines(copyables))
+		// label: value lines. The signature closes the reply's last message.
+		parts := mirrorParts{Text: it.plain}
+		if i == 0 {
+			parts.Lines = extraLines(copyables, p.Link)
 		}
-		if i == 0 && p.Link != nil {
-			body = appendLine(body, linkLine(*p.Link))
+		if i == len(items)-1 {
+			parts.Signature = p.Signature
 		}
-		e.mirror(ctx, key, thread, sent.ID, it.media, body)
+		if !e.mirror(ctx, key, thread, sent.ID, it.media, parts) {
+			mirrored = false
+		}
 	}
 
 	// Each copyable is its own message holding only the value, so a long-press
@@ -362,8 +369,21 @@ func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 		}
 	}
 	e.noteUnsent(ctx, thread, unsent)
+	e.replaceCard(ctx, p, mirrored)
 	e.markChatRead(key)
 	return Result{OK: true, HubMsgID: first, DeliveredAt: FormatTS(e.Clock.Now())}
+}
+
+// extraLines are the copyables and the link as the mirror shows them.
+func extraLines(copyables []Copyable, link *SendLink) []string {
+	var lines []string
+	for _, c := range copyables {
+		lines = append(lines, c.Label+": "+c.Value)
+	}
+	if link != nil {
+		lines = append(lines, linkLine(*link))
+	}
+	return lines
 }
 
 // markChatRead marks what the customer wrote as read, as staff replying from
@@ -413,28 +433,32 @@ func (e *Executor) noteUnsent(ctx context.Context, thread int64, unsent []Copyab
 		return
 	}
 	text := notePrefix + "The customer did not get these values, please send them by hand:\n" + copyableLines(unsent)
-	if _, err := e.Topics.PostText(ctx, thread, text); err != nil {
+	if _, err := e.Topics.PostText(ctx, thread, plainTopic(text)); err != nil {
 		e.Log.Error("agent link: could not post the note about unsent values", zap.Error(err))
 	}
 }
 
 // mirror posts what was just sent to the customer into the topic. A failure
-// here is logged and nothing more: the customer already has the message.
-func (e *Executor) mirror(ctx context.Context, key string, thread int64, waID string, m *OutMedia, caption string) {
+// here is logged and nothing more: the customer already has the message. It
+// reports whether the post is in the topic.
+func (e *Executor) mirror(ctx context.Context, key string, thread int64, waID string, m *OutMedia, parts mirrorParts) bool {
 	var tgID int64
 	var err error
 	if m == nil {
-		tgID, err = e.Topics.PostText(ctx, thread, mirrorPrefix+caption)
+		text, _ := renderMirror(parts, tgTextLimit)
+		tgID, err = e.Topics.PostText(ctx, thread, text)
 	} else {
+		text, _ := renderMirror(parts, tgCaptionLimit)
 		mm := *m
-		mm.Caption = strings.TrimSpace(mirrorPrefix + caption)
+		mm.Caption, mm.HTML = text.Text, text.HTML
 		tgID, err = e.Topics.PostMedia(ctx, thread, mm)
 	}
 	if err != nil {
 		e.Log.Error("agent link: could not mirror the reply into the topic", zap.String("wa_msg_id", waID), zap.Error(err))
-		return
+		return false
 	}
 	if err := e.Bridge.RecordPair(waID, key, tgID, thread); err != nil {
 		e.Log.Error("agent link: could not record the mirror's message pair", zap.String("wa_msg_id", waID), zap.Error(err))
 	}
+	return true
 }

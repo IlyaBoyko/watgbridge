@@ -22,14 +22,22 @@ func tgBot() (*gotgbot.Bot, error) {
 	return state.State.TelegramBot, nil
 }
 
-// The bot client sends everything as HTML, so plain text is escaped here.
-func (topicPoster) PostText(_ context.Context, threadID int64, text string) (int64, error) {
+// The bot client sends everything as HTML (middlewares.ParseAsHTML), so plain
+// text is escaped here and ready-made HTML goes through as it is.
+func htmlOf(t TopicText) string {
+	if t.HTML {
+		return t.Text
+	}
+	return html.EscapeString(t.Text)
+}
+
+func (topicPoster) PostText(_ context.Context, threadID int64, text TopicText) (int64, error) {
 	b, err := tgBot()
 	if err != nil {
 		return 0, err
 	}
-	msg, err := b.SendMessage(state.State.Config.Telegram.TargetChatID, html.EscapeString(text),
-		&gotgbot.SendMessageOpts{MessageThreadId: threadID})
+	msg, err := b.SendMessage(state.State.Config.Telegram.TargetChatID, htmlOf(text),
+		&gotgbot.SendMessageOpts{MessageThreadId: threadID, ParseMode: "HTML"})
 	if err != nil {
 		return 0, err
 	}
@@ -43,16 +51,16 @@ func (topicPoster) PostMedia(_ context.Context, threadID int64, m OutMedia) (int
 	}
 	chat := state.State.Config.Telegram.TargetChatID
 	file := &gotgbot.FileReader{Name: m.Filename, Data: bytes.NewReader(m.Data)}
-	caption := html.EscapeString(m.Caption)
+	caption := htmlOf(TopicText{Text: m.Caption, HTML: m.HTML})
 
 	var msg *gotgbot.Message
 	if m.Kind == "image" {
-		msg, err = b.SendPhoto(chat, file, &gotgbot.SendPhotoOpts{Caption: caption, MessageThreadId: threadID})
+		msg, err = b.SendPhoto(chat, file, &gotgbot.SendPhotoOpts{Caption: caption, MessageThreadId: threadID, ParseMode: "HTML"})
 	} else {
 		if file.Name == "" {
 			file.Name = "file"
 		}
-		msg, err = b.SendDocument(chat, file, &gotgbot.SendDocumentOpts{Caption: caption, MessageThreadId: threadID})
+		msg, err = b.SendDocument(chat, file, &gotgbot.SendDocumentOpts{Caption: caption, MessageThreadId: threadID, ParseMode: "HTML"})
 	}
 	if err != nil {
 		return 0, err
@@ -81,17 +89,17 @@ func inlineMarkup(kb Keyboard) gotgbot.InlineKeyboardMarkup {
 	return gotgbot.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
 
-func (topicPoster) PostCard(_ context.Context, threadID int64, text string, kb Keyboard) (int64, int64, error) {
+func (topicPoster) PostCard(_ context.Context, threadID int64, text TopicText, kb Keyboard) (int64, int64, error) {
 	b, err := tgBot()
 	if err != nil {
 		return 0, 0, err
 	}
-	opts := &gotgbot.SendMessageOpts{MessageThreadId: threadID}
+	opts := &gotgbot.SendMessageOpts{MessageThreadId: threadID, ParseMode: "HTML"}
 	if len(kb) > 0 {
 		opts.ReplyMarkup = inlineMarkup(kb)
 	}
 	chat := state.State.Config.Telegram.TargetChatID
-	msg, err := b.SendMessage(chat, html.EscapeString(text), opts)
+	msg, err := b.SendMessage(chat, htmlOf(text), opts)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -100,13 +108,23 @@ func (topicPoster) PostCard(_ context.Context, threadID int64, text string, kb K
 
 // EditCardMessage always sends the keyboard it wants: Telegram removes the
 // keyboard of an edited message when the edit does not carry one.
-func (topicPoster) EditCardMessage(_ context.Context, chatID, msgID int64, text string, kb Keyboard) error {
+func (topicPoster) EditCardMessage(_ context.Context, chatID, msgID int64, text TopicText, kb Keyboard) error {
 	b, err := tgBot()
 	if err != nil {
 		return err
 	}
-	_, _, err = b.EditMessageText(html.EscapeString(text), &gotgbot.EditMessageTextOpts{
-		ChatId: chatID, MessageId: msgID, ReplyMarkup: inlineMarkup(kb),
+	_, _, err = b.EditMessageText(htmlOf(text), &gotgbot.EditMessageTextOpts{
+		ChatId: chatID, MessageId: msgID, ReplyMarkup: inlineMarkup(kb), ParseMode: "HTML",
 	})
+	return err
+}
+
+// DeleteMessage needs the bot to be an admin with "Delete messages".
+func (topicPoster) DeleteMessage(_ context.Context, chatID, msgID int64) error {
+	b, err := tgBot()
+	if err != nil {
+		return err
+	}
+	_, err = b.DeleteMessage(chatID, msgID, nil)
 	return err
 }

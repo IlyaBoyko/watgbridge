@@ -49,7 +49,7 @@ func TestSendReplyMirrorsIntoTopicAndRecordsPair(t *testing.T) {
 	}
 
 	posts := w.topics.Posts()
-	if len(posts) != 1 || posts[0].Thread != 1234 || posts[0].Text != "🤖 Boleh! 2-3 hari bekerja <b>&</b>" {
+	if len(posts) != 1 || posts[0].Thread != 1234 || posts[0].Text != "🤖 <blockquote>Boleh! 2-3 hari bekerja &lt;b&gt;&amp;&lt;/b&gt;</blockquote>" {
 		t.Fatalf("topic posts = %+v", posts)
 	}
 	pairs := w.bridge.Pairs()
@@ -86,7 +86,7 @@ func TestSendReplyWithMedia(t *testing.T) {
 		t.Fatalf("calls = %+v", calls)
 	}
 	posts := w.topics.Posts()
-	if len(posts) != 1 || posts[0].Media == nil || posts[0].Media.Kind != "image" || posts[0].Text != "🤖 DuitNow QR" {
+	if len(posts) != 1 || posts[0].Media == nil || posts[0].Media.Kind != "image" || posts[0].Text != "🤖 <blockquote>DuitNow QR</blockquote>" {
 		t.Fatalf("posts = %+v", posts)
 	}
 	if len(w.bridge.Pairs()) != 1 {
@@ -137,7 +137,7 @@ func TestSendNotePostsOnlyInTopic(t *testing.T) {
 		t.Fatalf("result = %+v", res)
 	}
 	posts := w.topics.Posts()
-	if len(posts) != 1 || posts[0].Thread != 1234 || posts[0].Text != "ℹ️ Slip received for CM-261001-AB12 (RM 240)." {
+	if len(posts) != 1 || posts[0].Thread != 1234 || posts[0].Text != "ℹ️ <i>Slip received for CM-261001-AB12 (RM 240).</i>" {
 		t.Fatalf("posts = %+v", posts)
 	}
 	if n := len(w.wa.Calls()); n != 0 {
@@ -375,7 +375,7 @@ func TestCopyablesMirrorIsOnePostWithLabelValueLines(t *testing.T) {
 	if len(posts) != 1 {
 		t.Fatalf("%d topic posts, want exactly 1: %+v", len(posts), posts)
 	}
-	if want := "🤖 Please pay to this account\nAccount number: 5141 2345 6789\nAlias: clarus.pagos"; posts[0].Text != want {
+	if want := "🤖 <blockquote>Please pay to this account</blockquote>\nAccount number: 5141 2345 6789\nAlias: clarus.pagos"; posts[0].Text != want {
 		t.Errorf("mirror = %q, want %q", posts[0].Text, want)
 	}
 	if pairs := w.bridge.Pairs(); len(pairs) != 1 || pairs[0].WaMsgID != "WA001" {
@@ -390,7 +390,7 @@ func TestCopyablesMirrorIsOnePostWithLabelValueLines(t *testing.T) {
 		Copyables: copyablesOf(Copyable{Label: "Account number", Value: "5141 2345 6789"}),
 	}))
 	posts = w2.topics.Posts()
-	if len(posts) != 1 || posts[0].Media == nil || posts[0].Text != "🤖 DuitNow\nAccount number: 5141 2345 6789" {
+	if len(posts) != 1 || posts[0].Media == nil || posts[0].Text != "🤖 <blockquote>DuitNow</blockquote>\nAccount number: 5141 2345 6789" {
 		t.Fatalf("media mirror = %+v", posts)
 	}
 }

@@ -118,6 +118,7 @@ func (f *fakeWA) Calls() []waCall {
 type topicPost struct {
 	Thread int64
 	Text   string // text, or the caption of a media post
+	HTML   bool   // Text is ready-made Telegram HTML
 	Media  *OutMedia
 }
 
@@ -130,15 +131,18 @@ type fakeTopics struct {
 	cards    []cardPost
 	edits    []cardEdit
 	editFail error
+	// deleted lists deleted messages as {chat, message}; deleteFail fails the delete.
+	deleted    [][2]int64
+	deleteFail error
 }
 
-func (f *fakeTopics) PostText(_ context.Context, thread int64, text string) (int64, error) {
+func (f *fakeTopics) PostText(_ context.Context, thread int64, text TopicText) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail != nil {
 		return 0, f.fail
 	}
-	f.posts = append(f.posts, topicPost{Thread: thread, Text: text})
+	f.posts = append(f.posts, topicPost{Thread: thread, Text: text.Text, HTML: text.HTML})
 	f.seq++
 	return 9000 + f.seq, nil
 }
@@ -149,7 +153,7 @@ func (f *fakeTopics) PostMedia(_ context.Context, thread int64, m OutMedia) (int
 	if f.fail != nil {
 		return 0, f.fail
 	}
-	f.posts = append(f.posts, topicPost{Thread: thread, Text: m.Caption, Media: &m})
+	f.posts = append(f.posts, topicPost{Thread: thread, Text: m.Caption, HTML: m.HTML, Media: &m})
 	f.seq++
 	return 9000 + f.seq, nil
 }
@@ -157,34 +161,52 @@ func (f *fakeTopics) PostMedia(_ context.Context, thread int64, m OutMedia) (int
 type cardPost struct {
 	Thread int64
 	Text   string
+	HTML   bool
 	KB     Keyboard
 }
 
 type cardEdit struct {
 	ChatID, MsgID int64
 	Text          string
+	HTML          bool
 	KB            Keyboard
 }
 
-func (f *fakeTopics) PostCard(_ context.Context, thread int64, text string, kb Keyboard) (int64, int64, error) {
+func (f *fakeTopics) PostCard(_ context.Context, thread int64, text TopicText, kb Keyboard) (int64, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail != nil {
 		return 0, 0, f.fail
 	}
-	f.cards = append(f.cards, cardPost{Thread: thread, Text: text, KB: kb})
+	f.cards = append(f.cards, cardPost{Thread: thread, Text: text.Text, HTML: text.HTML, KB: kb})
 	f.seq++
 	return -1001, 9000 + f.seq, nil
 }
 
-func (f *fakeTopics) EditCardMessage(_ context.Context, chatID, msgID int64, text string, kb Keyboard) error {
+func (f *fakeTopics) EditCardMessage(_ context.Context, chatID, msgID int64, text TopicText, kb Keyboard) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.editFail != nil {
 		return f.editFail
 	}
-	f.edits = append(f.edits, cardEdit{ChatID: chatID, MsgID: msgID, Text: text, KB: kb})
+	f.edits = append(f.edits, cardEdit{ChatID: chatID, MsgID: msgID, Text: text.Text, HTML: text.HTML, KB: kb})
 	return nil
+}
+
+func (f *fakeTopics) DeleteMessage(_ context.Context, chatID, msgID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.deleteFail != nil {
+		return f.deleteFail
+	}
+	f.deleted = append(f.deleted, [2]int64{chatID, msgID})
+	return nil
+}
+
+func (f *fakeTopics) Deleted() [][2]int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([][2]int64(nil), f.deleted...)
 }
 
 func (f *fakeTopics) Cards() []cardPost {
