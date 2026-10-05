@@ -207,15 +207,18 @@ func main() {
 
 	agentCtx, stopAgent := context.WithCancel(context.Background())
 	defer stopAgent()
-	// The customer bot is built first so the agent link can send through it,
-	// but only polls once the link is up: a customer's message must be
-	// reportable the moment it is handled.
-	customerBot, err := tgcustomer.Init()
-	if err != nil {
-		logger.Fatal("failed to set up the customer bot", zap.Error(err))
-	}
+	// The customer bot logs in in the background (a failed login is retried,
+	// never fatal: WhatsApp and the staff group must not depend on it). The
+	// agent link gets its channel now, which fails sends until the bot is up,
+	// and the bot only starts polling once the link is up: a customer's message
+	// must be reportable the moment it is handled.
+	var customerBot *tgcustomer.Launcher
 	var customerChannel agentlink.CustomerChannel
-	if customerBot != nil {
+	if cfg.CustomerBot.Enabled {
+		customerBot = &tgcustomer.Launcher{
+			Build: tgcustomer.Init,
+			Log:   logger.Named("customerbot"),
+		}
 		customerChannel = customerBot
 	}
 	if err := agentlink.Start(agentCtx, customerChannel); err != nil {
@@ -228,9 +231,7 @@ func main() {
 
 	// Enabling the customer bot takes it over: its webhook is deleted here.
 	if customerBot != nil {
-		if err := customerBot.Start(); err != nil {
-			logger.Fatal("failed to start the customer bot", zap.Error(err))
-		}
+		customerBot.Run(agentCtx)
 	}
 
 	if !cfg.Telegram.SkipSettingCommands {

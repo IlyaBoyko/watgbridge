@@ -9,6 +9,7 @@ import (
 
 	"watgbridge/agentlink"
 	"watgbridge/database"
+	"watgbridge/retry"
 	"watgbridge/state"
 	"watgbridge/utils"
 
@@ -173,10 +174,10 @@ func Init() (*Service, error) {
 	}
 	token := cfg.CustomerBot.BotToken
 	if token == "" {
-		return nil, fmt.Errorf("customer_bot.enabled is true but customer_bot.bot_token is not set")
+		return nil, retry.Permanent(fmt.Errorf("customer_bot.enabled is true but customer_bot.bot_token is not set"))
 	}
 	if token == cfg.Telegram.BotToken {
-		return nil, fmt.Errorf("customer_bot.bot_token is the staff bot's token: the customer bot must be a different bot")
+		return nil, retry.Permanent(fmt.Errorf("customer_bot.bot_token is the staff bot's token: the customer bot must be a different bot"))
 	}
 	s, err := NewService(Options{
 		Token: token, APIURL: cfg.Telegram.APIURL, SelfHosted: cfg.Telegram.SelfHostedAPI,
@@ -185,6 +186,9 @@ func Init() (*Service, error) {
 		BoldCustomer: cfg.Telegram.BoldCustomerMessages,
 	})
 	if err != nil {
+		if utils.TgIsBadToken(err) {
+			err = retry.Permanent(err)
+		}
 		return nil, err
 	}
 	current.Store(s)
@@ -214,7 +218,11 @@ func HandleTopicMessage(b *gotgbot.Bot, c *ext.Context) bool {
 
 	s := current.Load()
 	if s == nil {
-		_, _ = utils.TgReplyTextByContext(b, c, "The customer bot is turned off (customer_bot.enabled), so this was not sent to the customer.", nil, false)
+		note := "The customer bot is turned off (customer_bot.enabled), so this was not sent to the customer."
+		if state.State.Config.CustomerBot.Enabled {
+			note = "The customer bot is not logged in yet (the Hub keeps retrying), so this was not sent to the customer."
+		}
+		_, _ = utils.TgReplyTextByContext(b, c, note, nil, false)
 		return true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), perMessageTimeout)
