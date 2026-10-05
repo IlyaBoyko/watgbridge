@@ -125,6 +125,16 @@ func (waSender) SendDocument(ctx context.Context, to string, data []byte, mime, 
 	return SentMessage{ID: resp.ID}, err
 }
 
+// markChatRead is Executor.MarkRead on the bridge's own read-receipt helper,
+// the one the Telegram send path uses.
+func markChatRead(chatKey string) error {
+	jid, err := waTypes.ParseJID(chatKey)
+	if err != nil {
+		return err
+	}
+	return utils.WaMarkChatRead(jid)
+}
+
 // bridgeState implements Bridge on the bridge's own database and clients.
 type bridgeState struct{}
 

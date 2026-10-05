@@ -66,6 +66,7 @@ whatsapp:
   # WhatsApp Business (SMB) account. Any other value keeps the desktop web
   # companion. Experimental; only applied when a fresh session is paired.
   client_mode: android
+  always_online: false                 # Shows the account as online to contacts at all times; needed for delivered double ticks on a linked device
   # All these values can be obtained by running /findcontacts and /getwagroups commands
   # You have to put only the values preceding the @ character
   tag_all_allowed_groups:         # Members of these groups can tag everyone by sending @all or @everyone

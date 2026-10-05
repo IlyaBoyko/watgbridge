@@ -118,6 +118,9 @@ type Executor struct {
 	// off, which makes every tg: conversation unknown.
 	Customer CustomerChannel
 	Bridge   Bridge
+	// MarkRead marks the unread messages of a WhatsApp chat read once a reply
+	// went out. Nil when telegram.send_my_read_receipts is off.
+	MarkRead func(chatKey string) error
 	Memory   *CommandMemory
 	Cards    *CardStore
 	Clock    Clock
@@ -359,7 +362,20 @@ func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 		}
 	}
 	e.noteUnsent(ctx, thread, unsent)
+	e.markChatRead(key)
 	return Result{OK: true, HubMsgID: first, DeliveredAt: FormatTS(e.Clock.Now())}
+}
+
+// markChatRead marks what the customer wrote as read, as staff replying from
+// Telegram does (telegram.send_my_read_receipts). Best effort: the reply is
+// already sent, so a failure is only logged.
+func (e *Executor) markChatRead(key string) {
+	if e.MarkRead == nil {
+		return
+	}
+	if err := e.MarkRead(key); err != nil {
+		e.Log.Warn("agent link: could not mark the chat read", zap.String("chat", key), zap.Error(err))
+	}
 }
 
 func appendLine(body, line string) string {

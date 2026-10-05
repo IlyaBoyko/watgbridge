@@ -39,6 +39,7 @@ func Start(ctx context.Context, customer CustomerChannel) error {
 		Bridge:     bridgeState{},
 		WA:         waSender{},
 		Customer:   customer,
+		MarkRead:   readReceiptHook(cfg),
 		Topics:     topicPoster{},
 		Notifier:   ownerNotifier{},
 		Log:        state.State.Logger.Named("agentlink"),
@@ -50,6 +51,15 @@ func Start(ctx context.Context, customer CustomerChannel) error {
 	current.Store(h)
 	h.Start(ctx)
 	return nil
+}
+
+// readReceiptHook is the executor's MarkRead: the bridge's read-receipt helper
+// when telegram.send_my_read_receipts is on, nil (off) otherwise.
+func readReceiptHook(cfg *state.Config) func(chatKey string) error {
+	if !cfg.Telegram.SendMyReadReceipts {
+		return nil
+	}
+	return markChatRead
 }
 
 // Stop waits briefly for the link to wind down after its context was cancelled.

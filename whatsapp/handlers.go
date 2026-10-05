@@ -34,6 +34,9 @@ func WhatsAppEventHandler(evt interface{}) {
 	cfg := state.State.Config
 
 	switch v := evt.(type) {
+	case *events.Connected:
+		utils.WaSendAvailableIfAlwaysOnline()
+
 	case *events.LoggedOut:
 		LogoutHandler(v)
 

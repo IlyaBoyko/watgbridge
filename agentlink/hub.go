@@ -27,7 +27,10 @@ type Deps struct {
 	Bridge Bridge
 	WA     WhatsAppSender
 	// Customer is the Telegram customer bot; nil when it is off.
-	Customer   CustomerChannel
+	Customer CustomerChannel
+	// MarkRead marks a WhatsApp chat's unread messages read after a reply to it
+	// was sent. Nil turns that off.
+	MarkRead   func(chatKey string) error
 	Topics     TopicPoster
 	Notifier   OwnerNotifier
 	Clock      Clock
@@ -94,7 +97,7 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 	}
 	h.prune()
 
-	h.exec = &Executor{WA: d.WA, Topics: d.Topics, Customer: d.Customer, Bridge: d.Bridge, Memory: h.mem, Cards: h.cards, Clock: d.Clock, Guard: h.guard, Log: d.Log}
+	h.exec = &Executor{WA: d.WA, Topics: d.Topics, Customer: d.Customer, Bridge: d.Bridge, MarkRead: d.MarkRead, Memory: h.mem, Cards: h.cards, Clock: d.Clock, Guard: h.guard, Log: d.Log}
 	opt := d.Link
 	if len(opt.Channels) == 0 {
 		opt.Channels = []string{"wa"}
