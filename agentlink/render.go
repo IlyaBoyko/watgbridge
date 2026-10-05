@@ -2,6 +2,7 @@ package agentlink
 
 import (
 	"html"
+	"regexp"
 	"strings"
 )
 
@@ -27,6 +28,29 @@ type mirrorParts struct {
 	Text      string   // the reply's own text or caption
 	Lines     []string // copyable and link lines, `label: value`
 	Signature string   // set on the last message of a reply only
+	// HTML says Text is the Agent's own Telegram HTML (protocol section 5c):
+	// the mirror keeps it instead of escaping it.
+	HTML bool
+}
+
+var (
+	anchorRe = regexp.MustCompile(`(?is)<a\s+[^>]*?href\s*=\s*"([^"]*)"[^>]*>(.*?)</a>`)
+	tagRe    = regexp.MustCompile(`<[^>]*>`)
+)
+
+// StripHTML turns the Agent's Telegram HTML into plain text: tags go, entities
+// are unescaped, and a link keeps its address after its label, since a plain
+// message has no other way to show it.
+func StripHTML(s string) string {
+	s = anchorRe.ReplaceAllStringFunc(s, func(m string) string {
+		sub := anchorRe.FindStringSubmatch(m)
+		label, href := tagRe.ReplaceAllString(sub[2], ""), html.UnescapeString(sub[1])
+		if label == "" || html.UnescapeString(label) == href {
+			return sub[1]
+		}
+		return label + " (" + sub[1] + ")"
+	})
+	return html.UnescapeString(tagRe.ReplaceAllString(s, ""))
 }
 
 // renderMirror builds the mirror post: the robot and the reply on one line
@@ -39,8 +63,13 @@ type mirrorParts struct {
 func renderMirror(p mirrorParts, limit int) (TopicText, bool) {
 	rich, plain := "🤖", "🤖"
 	if p.Text != "" {
-		rich += " " + esc(p.Text)
-		plain += " " + p.Text
+		if p.HTML {
+			rich += " " + p.Text
+			plain += " " + StripHTML(p.Text)
+		} else {
+			rich += " " + esc(p.Text)
+			plain += " " + p.Text
+		}
 	}
 	for _, l := range p.Lines {
 		rich = appendLine(rich, esc(l))

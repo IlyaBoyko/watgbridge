@@ -82,7 +82,7 @@ func NewService(o Options) (*Service, error) {
 	}
 
 	s := &Service{bot: bot, pairs: NewPairs(o.DB), log: o.Log}
-	s.cb = &customerBot{bot: bot, hc: hc, selfHosted: o.SelfHosted}
+	s.cb = &customerBot{bot: bot, hc: hc, selfHosted: o.SelfHosted, log: o.Log}
 	s.bridge = &Bridge{
 		CustomerFiles: s.cb, Topics: o.Topics, Sender: s.cb, Threads: o.Threads,
 		Pairs: s.pairs, Events: o.Events, Log: o.Log, BoldCustomer: o.BoldCustomer,

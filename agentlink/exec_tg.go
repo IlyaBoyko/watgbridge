@@ -29,6 +29,9 @@ type tgMessage struct {
 	// reply's own text or caption, and the copyables and link as extra lines.
 	body  string
 	lines []string
+	// formatted says html and body hold the Agent's own Telegram HTML (protocol
+	// section 5c) instead of escaped plain text.
+	formatted bool
 }
 
 // planTelegramReply decides which messages a reply becomes (protocol §5):
@@ -40,9 +43,15 @@ type tgMessage struct {
 //     caption limit: then the media goes first and the text follows as a second
 //     message, which also holds the buttons that belong to it.
 //
+// With formatted set, text is the Agent's own Telegram HTML (protocol §5c) and
+// goes out as given; limits are measured on what Telegram will show of it.
+//
 // It reports false when the text cannot fit in a message at all.
-func planTelegramReply(text string, media []OutMedia, copyables []Copyable, link *SendLink) ([]tgMessage, bool) {
+func planTelegramReply(text string, formatted bool, media []OutMedia, copyables []Copyable, link *SendLink) ([]tgMessage, bool) {
 	textHTML, textPlain := html.EscapeString(text), text
+	if formatted {
+		textHTML, textPlain = text, StripHTML(text)
+	}
 	var kb [][]CustomerButton
 	for _, c := range copyables {
 		textHTML = appendLine(textHTML, html.EscapeString(c.Label)+": <code>"+html.EscapeString(c.Value)+"</code>")
@@ -60,7 +69,7 @@ func planTelegramReply(text string, media []OutMedia, copyables []Copyable, link
 		if tgLen(textPlain) > tgTextLimit {
 			return nil, false
 		}
-		return []tgMessage{{html: textHTML, body: text, lines: lines, buttons: kb}}, true
+		return []tgMessage{{html: textHTML, body: text, lines: lines, buttons: kb, formatted: formatted}}, true
 	}
 
 	var out []tgMessage
@@ -72,13 +81,13 @@ func planTelegramReply(text string, media []OutMedia, copyables []Copyable, link
 			case textPlain == "":
 				msg.buttons, msg.lines = kb, lines
 			case tgLen(textPlain) <= tgCaptionLimit:
-				msg.html, msg.body, msg.lines, msg.buttons = textHTML, text, lines, kb
+				msg.html, msg.body, msg.lines, msg.buttons, msg.formatted = textHTML, text, lines, kb, formatted
 			default:
 				out = append(out, msg)
 				if tgLen(textPlain) > tgTextLimit {
 					return nil, false
 				}
-				msg = tgMessage{html: textHTML, body: text, lines: lines, buttons: kb}
+				msg = tgMessage{html: textHTML, body: text, lines: lines, buttons: kb, formatted: formatted}
 			}
 		}
 		out = append(out, msg)
@@ -143,7 +152,7 @@ func (e *Executor) sendReplyTelegram(ctx context.Context, p *Send) Result {
 	if p.Copyables != nil {
 		copyables = *p.Copyables
 	}
-	plan, ok := planTelegramReply(p.Text, media, copyables, p.Link)
+	plan, ok := planTelegramReply(p.Text, p.Format == FormatHTML, media, copyables, p.Link)
 	if !ok {
 		return fail(ErrInvalid)
 	}
@@ -160,11 +169,11 @@ func (e *Executor) sendReplyTelegram(ctx context.Context, p *Send) Result {
 		var id int64
 		var err error
 		if m.file == nil {
-			id, err = e.Customer.SendText(ctx, userID, CustomerText{HTML: m.html, Buttons: m.buttons, ReplyTo: replyTo})
+			id, err = e.Customer.SendText(ctx, userID, CustomerText{HTML: m.html, Formatted: m.formatted, Buttons: m.buttons, ReplyTo: replyTo})
 		} else {
 			id, err = e.Customer.SendFile(ctx, userID, CustomerFile{
 				Kind: m.file.Kind, Data: m.file.Data, Filename: m.file.Filename, Mime: m.file.Mime,
-				HTMLCaption: m.html, Buttons: m.buttons, ReplyTo: replyTo,
+				HTMLCaption: m.html, FormattedCaption: m.formatted, Buttons: m.buttons, ReplyTo: replyTo,
 			})
 		}
 		if err != nil {
@@ -185,7 +194,7 @@ func (e *Executor) sendReplyTelegram(ctx context.Context, p *Send) Result {
 		if e.Guard != nil {
 			e.Guard.Mark(hubID)
 		}
-		parts := mirrorParts{Text: m.body, Lines: m.lines}
+		parts := mirrorParts{Text: m.body, Lines: m.lines, HTML: m.formatted}
 		if i == len(plan)-1 {
 			parts.Signature = p.Signature
 		}
@@ -211,21 +220,42 @@ func (e *Executor) mirrorTelegram(ctx context.Context, chatID, thread, customerM
 		topicIDs = append(topicIDs, id)
 		return true
 	}
+	// The Agent's own HTML may be something Telegram refuses; the customer got
+	// the plain fallback of it, so the topic gets the same instead of nothing.
+	plainParts := parts
+	plainParts.HTML, plainParts.Text = false, StripHTML(parts.Text)
+	postText := func(limit int) (int64, error) {
+		text, _ := renderMirror(parts, limit)
+		id, err := e.Topics.PostText(ctx, thread, text)
+		if err != nil && parts.HTML {
+			e.Log.Warn("agent link: the topic refused the formatted mirror, posting it as plain text", zap.Error(err))
+			text, _ = renderMirror(plainParts, limit)
+			return e.Topics.PostText(ctx, thread, text)
+		}
+		return id, err
+	}
+	postCaption := func(mm OutMedia, caption TopicText) (int64, error) {
+		mm.Caption, mm.HTML = caption.Text, caption.HTML
+		id, err := e.Topics.PostMedia(ctx, thread, mm)
+		if err != nil && parts.HTML {
+			e.Log.Warn("agent link: the topic refused the formatted mirror, posting it as plain text", zap.Error(err))
+			plain, _ := renderMirror(plainParts, tgCaptionLimit)
+			mm.Caption, mm.HTML = plain.Text, plain.HTML
+			return e.Topics.PostMedia(ctx, thread, mm)
+		}
+		return id, err
+	}
 	posted := true
 	if m.file == nil {
-		text, _ := renderMirror(parts, tgTextLimit)
-		posted = post(e.Topics.PostText(ctx, thread, text))
+		posted = post(postText(tgTextLimit))
 	} else if caption, fits := renderMirror(parts, tgCaptionLimit); fits {
-		mm := *m.file
-		mm.Caption, mm.HTML = caption.Text, caption.HTML
-		posted = post(e.Topics.PostMedia(ctx, thread, mm))
+		posted = post(postCaption(*m.file, caption))
 	} else {
 		// The topic's own caption limit is the same: the text follows the file.
 		mm := *m.file
 		mm.Caption = strings.TrimSpace(mirrorPrefix)
 		if posted = post(e.Topics.PostMedia(ctx, thread, mm)); posted {
-			text, _ := renderMirror(parts, tgTextLimit)
-			posted = post(e.Topics.PostText(ctx, thread, text))
+			posted = post(postText(tgTextLimit))
 		}
 	}
 	for _, id := range topicIDs {

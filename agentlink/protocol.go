@@ -196,8 +196,14 @@ type Send struct {
 	Signature    string `json:"signature,omitempty"`
 	ReplacesCard string `json:"replaces_card,omitempty"`
 	Title        string `json:"title,omitempty"`
-	ExpiresAt    string `json:"expires_at"`
+	// Format "html" says Text is Telegram HTML, escaped by the Agent (protocol
+	// section 5c). Empty is plain text. Only a tg: reply looks at it.
+	Format    string `json:"format,omitempty"`
+	ExpiresAt string `json:"expires_at"`
 }
+
+// FormatHTML is the one value of Send.Format.
+const FormatHTML = "html"
 
 type EditCard struct {
 	Conversation string   `json:"conversation"`
@@ -409,6 +415,9 @@ func (s *Send) Validate() error {
 	}
 	if utf8.RuneCountInString(s.Title) > MaxTitle {
 		return fmt.Errorf("send.title is longer than %d characters", MaxTitle)
+	}
+	if s.Format != "" && s.Format != FormatHTML {
+		return fmt.Errorf("send.format %q is not valid", s.Format)
 	}
 	return validateISO("send.expires_at", s.ExpiresAt)
 }

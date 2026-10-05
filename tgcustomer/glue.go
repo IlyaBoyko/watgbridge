@@ -17,6 +17,7 @@ import (
 	"watgbridge/utils"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
+	"go.uber.org/zap"
 )
 
 // Glue between the bridge and the two Telegram bots. No decisions live here.
@@ -113,16 +114,39 @@ type customerBot struct {
 	bot        *gotgbot.Bot
 	hc         *http.Client
 	selfHosted bool
+	log        *zap.Logger // may be nil
 }
 
 func (c *customerBot) Download(ctx context.Context, fileID string, size int64) ([]byte, error) {
 	return download(ctx, c.bot, c.hc, c.selfHosted, fileID, size)
 }
 
+// isParseError is Telegram refusing HTML it cannot parse ("can't parse
+// entities: Unsupported start tag ...").
+func isParseError(err error) bool {
+	var te *gotgbot.TelegramError
+	return errors.As(err, &te) && te.Code == 400 && strings.Contains(strings.ToLower(te.Description), "can't parse entities")
+}
+
+func (c *customerBot) warnPlainFallback(err error) {
+	log := c.log
+	if log == nil {
+		log = zap.NewNop()
+	}
+	log.Warn("Telegram refused the Agent's HTML, sending it once as plain text", zap.Error(err))
+}
+
 func (c *customerBot) SendText(ctx context.Context, chatID int64, m agentlink.CustomerText) (int64, error) {
-	msg, err := c.bot.SendMessageWithContext(ctx, chatID, m.HTML, &gotgbot.SendMessageOpts{
-		ParseMode: "HTML", ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo),
-	})
+	send := func(text, parseMode string) (*gotgbot.Message, error) {
+		return c.bot.SendMessageWithContext(ctx, chatID, text, &gotgbot.SendMessageOpts{
+			ParseMode: parseMode, ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo),
+		})
+	}
+	msg, err := send(m.HTML, "HTML")
+	if err != nil && m.Formatted && isParseError(err) {
+		c.warnPlainFallback(err)
+		msg, err = send(agentlink.StripHTML(m.HTML), "")
+	}
 	if err != nil {
 		return 0, mapSendErr(err)
 	}
@@ -140,31 +164,33 @@ func (c *customerBot) SendFile(ctx context.Context, chatID int64, m agentlink.Cu
 	file := func(fallback string) *gotgbot.FileReader {
 		return &gotgbot.FileReader{Name: fileName(m.Filename, fallback), Data: bytes.NewReader(m.Data)}
 	}
-	var (
-		msg *gotgbot.Message
-		err error
-	)
-	switch m.Kind {
-	case "image":
-		msg, err = c.bot.SendPhotoWithContext(ctx, chatID, file("photo.jpg"), &gotgbot.SendPhotoOpts{
-			Caption: m.HTMLCaption, ParseMode: "HTML", ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
-	case "video":
-		msg, err = c.bot.SendVideoWithContext(ctx, chatID, file("video.mp4"), &gotgbot.SendVideoOpts{
-			Caption: m.HTMLCaption, ParseMode: "HTML", ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
-	case "voice":
-		msg, err = c.bot.SendVoiceWithContext(ctx, chatID, file("voice.ogg"), &gotgbot.SendVoiceOpts{
-			Caption: m.HTMLCaption, ParseMode: "HTML", ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
-	case "audio":
-		msg, err = c.bot.SendAudioWithContext(ctx, chatID, file("audio.mp3"), &gotgbot.SendAudioOpts{
-			Caption: m.HTMLCaption, ParseMode: "HTML", ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
-	case "sticker":
-		msg, err = c.bot.SendStickerWithContext(ctx, chatID, file("sticker.webp"), &gotgbot.SendStickerOpts{
-			ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
-	case "document":
-		msg, err = c.bot.SendDocumentWithContext(ctx, chatID, file("file"), &gotgbot.SendDocumentOpts{
-			Caption: m.HTMLCaption, ParseMode: "HTML", ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
-	default:
-		return 0, fmt.Errorf("cannot send a %q to a customer", m.Kind)
+	send := func(caption, parseMode string) (*gotgbot.Message, error) {
+		switch m.Kind {
+		case "image":
+			return c.bot.SendPhotoWithContext(ctx, chatID, file("photo.jpg"), &gotgbot.SendPhotoOpts{
+				Caption: caption, ParseMode: parseMode, ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
+		case "video":
+			return c.bot.SendVideoWithContext(ctx, chatID, file("video.mp4"), &gotgbot.SendVideoOpts{
+				Caption: caption, ParseMode: parseMode, ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
+		case "voice":
+			return c.bot.SendVoiceWithContext(ctx, chatID, file("voice.ogg"), &gotgbot.SendVoiceOpts{
+				Caption: caption, ParseMode: parseMode, ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
+		case "audio":
+			return c.bot.SendAudioWithContext(ctx, chatID, file("audio.mp3"), &gotgbot.SendAudioOpts{
+				Caption: caption, ParseMode: parseMode, ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
+		case "sticker":
+			return c.bot.SendStickerWithContext(ctx, chatID, file("sticker.webp"), &gotgbot.SendStickerOpts{
+				ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
+		case "document":
+			return c.bot.SendDocumentWithContext(ctx, chatID, file("file"), &gotgbot.SendDocumentOpts{
+				Caption: caption, ParseMode: parseMode, ReplyMarkup: markup(m.Buttons), ReplyParameters: replyParams(m.ReplyTo)})
+		}
+		return nil, fmt.Errorf("cannot send a %q to a customer", m.Kind)
+	}
+	msg, err := send(m.HTMLCaption, "HTML")
+	if err != nil && m.FormattedCaption && isParseError(err) {
+		c.warnPlainFallback(err)
+		msg, err = send(agentlink.StripHTML(m.HTMLCaption), "")
 	}
 	if err != nil {
 		return 0, mapSendErr(err)

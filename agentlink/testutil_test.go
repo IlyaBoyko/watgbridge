@@ -126,7 +126,9 @@ type fakeTopics struct {
 	mu    sync.Mutex
 	posts []topicPost
 	fail  error
-	seq   int64
+	// failText, when set, fails the mirror posts whose text it returns an error for.
+	failText func(text string) error
+	seq      int64
 	// cards and edits are kept apart from posts: they are not mirrors.
 	cards    []cardPost
 	edits    []cardEdit
@@ -142,6 +144,11 @@ func (f *fakeTopics) PostText(_ context.Context, thread int64, text TopicText) (
 	if f.fail != nil {
 		return 0, f.fail
 	}
+	if f.failText != nil {
+		if err := f.failText(text.Text); err != nil {
+			return 0, err
+		}
+	}
 	f.posts = append(f.posts, topicPost{Thread: thread, Text: text.Text, HTML: text.HTML})
 	f.seq++
 	return 9000 + f.seq, nil
@@ -152,6 +159,11 @@ func (f *fakeTopics) PostMedia(_ context.Context, thread int64, m OutMedia) (int
 	defer f.mu.Unlock()
 	if f.fail != nil {
 		return 0, f.fail
+	}
+	if f.failText != nil {
+		if err := f.failText(m.Caption); err != nil {
+			return 0, err
+		}
 	}
 	f.posts = append(f.posts, topicPost{Thread: thread, Text: m.Caption, HTML: m.HTML, Media: &m})
 	f.seq++

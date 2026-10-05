@@ -25,10 +25,15 @@ type CustomerButton struct {
 
 // CustomerText is a text message to a customer. HTML is already escaped and
 // formatted: the channel sends it with HTML parse mode as it is.
+//
+// Formatted says the HTML is the Agent's own (protocol section 5c), which
+// Telegram may refuse to parse: the channel then retries once as plain text
+// (StripHTML). Without it the Hub escaped the text itself, so it always parses.
 type CustomerText struct {
-	HTML    string
-	Buttons [][]CustomerButton
-	ReplyTo int64 // a message of the same chat to quote; 0 for none
+	HTML      string
+	Formatted bool
+	Buttons   [][]CustomerButton
+	ReplyTo   int64 // a message of the same chat to quote; 0 for none
 }
 
 // CustomerFile is a file to a customer. Kind is image, video, voice, audio,
@@ -39,8 +44,10 @@ type CustomerFile struct {
 	Filename    string
 	Mime        string
 	HTMLCaption string
-	Buttons     [][]CustomerButton
-	ReplyTo     int64
+	// FormattedCaption: as CustomerText.Formatted, for the caption.
+	FormattedCaption bool
+	Buttons          [][]CustomerButton
+	ReplyTo          int64
 }
 
 // CustomerChannel is the Telegram customer bot as the Executor and the hooks
