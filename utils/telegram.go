@@ -46,8 +46,31 @@ func TgMakeReplyParameters(messageId, chatId int64) *gotgbot.ReplyParameters {
 	return replyParameters
 }
 
+// TgRegisterBotCommands sets the "/" menu for the default scope with no
+// language code, so it shows in every app language.
 func TgRegisterBotCommands(b *gotgbot.Bot, commands ...gotgbot.BotCommand) error {
 	_, err := b.SetMyCommands(commands, &gotgbot.SetMyCommandsOpts{
+		Scope: gotgbot.BotCommandScopeDefault{},
+	})
+	if err != nil {
+		return err
+	}
+
+	// An earlier version registered an "en" list, which takes precedence over the
+	// language-less one for English apps and would hide this menu.
+	if _, delErr := b.DeleteMyCommands(&gotgbot.DeleteMyCommandsOpts{
+		LanguageCode: "en",
+		Scope:        gotgbot.BotCommandScopeDefault{},
+	}); delErr != nil {
+		state.State.Logger.Warn("failed to delete the old en-scoped command list", zap.Error(delErr))
+	}
+	return nil
+}
+
+// TgClearBotCommands is the old skip_setting_commands behaviour: it sets an
+// empty "en" list and nothing else.
+func TgClearBotCommands(b *gotgbot.Bot) error {
+	_, err := b.SetMyCommands(nil, &gotgbot.SetMyCommandsOpts{
 		LanguageCode: "en",
 		Scope:        gotgbot.BotCommandScopeDefault{},
 	})

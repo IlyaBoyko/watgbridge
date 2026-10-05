@@ -234,14 +234,15 @@ func main() {
 	}
 
 	if !cfg.Telegram.SkipSettingCommands {
-		err = utils.TgRegisterBotCommands(state.State.TelegramBot, state.State.TelegramCommands...)
+		menu := agentlink.WithMenuCommands(state.State.TelegramCommands, cfg.Agent.Enabled)
+		err = utils.TgRegisterBotCommands(state.State.TelegramBot, menu...)
 		if err != nil {
 			logger.Error("failed to set my commands",
 				zap.Error(err),
 			)
 		}
 	} else {
-		err = utils.TgRegisterBotCommands(state.State.TelegramBot)
+		err = utils.TgClearBotCommands(state.State.TelegramBot)
 		if err != nil {
 			logger.Error("failed to set my commands to empty",
 				zap.Error(err),
