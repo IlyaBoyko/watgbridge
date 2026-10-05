@@ -423,7 +423,7 @@ func TestEditedMessage(t *testing.T) {
 	if len(posts) != 2 {
 		t.Fatalf("posts = %+v", posts)
 	}
-	if posts[1].Text != "✏️ edited:\nis it in stock?" || posts[1].ReplyTo != original || posts[1].Kind != "text" {
+	if posts[1].Prefix != editPrefix || posts[1].Text != "is it in stock?" || posts[1].ReplyTo != original || posts[1].Kind != "text" {
 		t.Errorf("edit post = %+v", posts[1])
 	}
 	// A reply to the edit post still reaches the customer's message 41.
@@ -459,7 +459,7 @@ func TestEditOfAFileCaptionAndOfUnpairedMessages(t *testing.T) {
 	capMsg.Caption = "new caption"
 	capMsg.EditDate = 5
 	w.handle(capMsg, true)
-	if p := w.topics.Posts(); len(p) != 1 || p[0].Text != "✏️ edited:\nnew caption" || p[0].ReplyTo != 0 || p[0].Data != nil {
+	if p := w.topics.Posts(); len(p) != 1 || p[0].Prefix != editPrefix || p[0].Text != "new caption" || p[0].ReplyTo != 0 || p[0].Data != nil {
 		t.Errorf("posts = %+v", p)
 	}
 	if len(w.files.Calls()) != 0 {
@@ -495,5 +495,71 @@ func TestPostFailureStillReportsTheMessage(t *testing.T) {
 	}
 	if _, _, found, _ := w.pairs.TopicMsgFor(customerID, 1); found {
 		t.Error("a pair was recorded for a post that failed")
+	}
+}
+
+/* ------------------------------------------------ telegram.bold_customer_messages -- */
+
+func TestCustomerMessagesAreNotBoldByDefault(t *testing.T) {
+	w := newWorld(t)
+	w.handle(textMsg(1, "hello"), false)
+	if p := w.topics.Posts(); len(p) != 1 || p[0].Bold {
+		t.Errorf("posts = %+v", p)
+	}
+}
+
+func TestBoldCustomerMarksTextCaptionAndEdit(t *testing.T) {
+	w := newWorld(t)
+	w.bridge.BoldCustomer = true
+	w.files.files["p"] = []byte("img")
+
+	w.handle(textMsg(1, "hello"), false)
+	photo := privateMsg(2)
+	photo.Photo = []gotgbot.PhotoSize{{FileId: "p", Width: 1, Height: 1, FileSize: 3}}
+	photo.Caption = "my slip"
+	w.handle(photo, false)
+	edit := textMsg(1, "hello!")
+	edit.EditDate = 5
+	w.handle(edit, true)
+
+	posts := w.topics.Posts()
+	if len(posts) != 3 {
+		t.Fatalf("posts = %+v", posts)
+	}
+	if !posts[0].Bold || posts[0].Prefix != "" || posts[0].Text != "hello" {
+		t.Errorf("text post = %+v", posts[0].TopicPost)
+	}
+	if !posts[1].Bold || posts[1].Kind != "photo" || posts[1].Text != "my slip" {
+		t.Errorf("caption post = %+v", posts[1].TopicPost)
+	}
+	// The "edited" line is the bridge's own and stays plain.
+	if !posts[2].Bold || posts[2].Prefix != editPrefix || posts[2].Text != "hello!" {
+		t.Errorf("edit post = %+v", posts[2].TopicPost)
+	}
+}
+
+func TestBoldCustomerLeavesTheBridgesOwnNotesPlain(t *testing.T) {
+	w := newWorld(t)
+	w.bridge.BoldCustomer = true
+
+	// A message of a kind the bridge cannot carry: a note.
+	poll := privateMsg(1)
+	poll.Poll = &gotgbot.Poll{Question: "?"}
+	w.handle(poll, false)
+	// A file that cannot be downloaded: a note that quotes the caption.
+	w.files.errs["big"] = ErrTooBig
+	doc := privateMsg(2)
+	doc.Document = &gotgbot.Document{FileId: "big", FileName: "a.pdf", FileSize: 100}
+	doc.Caption = "slip"
+	w.handle(doc, false)
+
+	posts := w.topics.Posts()
+	if len(posts) != 2 {
+		t.Fatalf("posts = %+v", posts)
+	}
+	for _, p := range posts {
+		if p.Bold || !strings.HasPrefix(p.Text, notePrefix) {
+			t.Errorf("a service note is bold or lost its prefix: %+v", p.TopicPost)
+		}
 	}
 }

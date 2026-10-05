@@ -14,6 +14,7 @@ import (
 	"watgbridge/agentlink"
 	"watgbridge/database"
 	"watgbridge/state"
+	"watgbridge/utils"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 )
@@ -205,6 +206,16 @@ func (hubTopics) CreateTopic(ctx context.Context, name string) (int64, error) {
 	return topic.MessageThreadId, nil
 }
 
+// topicText is the HTML for a post: Prefix and Text escaped, Text in bold when
+// it is the customer's own and the post still fits limit.
+func topicText(p TopicPost, limit int) string {
+	prefix, body := html.EscapeString(p.Prefix), html.EscapeString(p.Text)
+	if p.Bold {
+		body = utils.BoldCustomerBody(prefix, body, limit)
+	}
+	return prefix + body
+}
+
 func (hubTopics) Post(ctx context.Context, thread int64, p TopicPost) (int64, error) {
 	b, err := hubBot()
 	if err != nil {
@@ -212,7 +223,8 @@ func (hubTopics) Post(ctx context.Context, thread int64, p TopicPost) (int64, er
 	}
 	chat := state.State.Config.Telegram.TargetChatID
 	reply := replyParams(p.ReplyTo)
-	caption := html.EscapeString(p.Text)
+	// What the customer wrote may be bold; the bridge's own words never are.
+	caption := topicText(p, utils.TgCaptionLimit)
 	file := func() *gotgbot.FileReader {
 		return &gotgbot.FileReader{Name: fileName(p.Filename, "file"), Data: bytes.NewReader(p.Data)}
 	}
@@ -220,7 +232,7 @@ func (hubTopics) Post(ctx context.Context, thread int64, p TopicPost) (int64, er
 	var msg *gotgbot.Message
 	switch p.Kind {
 	case "text":
-		msg, err = b.SendMessageWithContext(ctx, chat, caption, &gotgbot.SendMessageOpts{MessageThreadId: thread, ReplyParameters: reply})
+		msg, err = b.SendMessageWithContext(ctx, chat, topicText(p, utils.TgTextLimit), &gotgbot.SendMessageOpts{MessageThreadId: thread, ReplyParameters: reply})
 	case "photo":
 		msg, err = b.SendPhotoWithContext(ctx, chat, file(), &gotgbot.SendPhotoOpts{Caption: caption, MessageThreadId: thread, ReplyParameters: reply})
 	case "video":

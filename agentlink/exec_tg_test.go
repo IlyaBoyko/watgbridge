@@ -50,7 +50,7 @@ func TestTelegramReplyEscapesMirrorsAndPairs(t *testing.T) {
 		t.Errorf("%d WhatsApp sends for a Telegram customer", n)
 	}
 	posts := w.topics.Posts()
-	if len(posts) != 1 || posts[0].Thread != 1250 || posts[0].Text != "🤖 <blockquote>a &lt; b &amp; c &gt; d</blockquote>" {
+	if len(posts) != 1 || posts[0].Thread != 1250 || posts[0].Text != "🤖 a &lt; b &amp; c &gt; d" {
 		t.Fatalf("mirror = %+v", posts)
 	}
 	if want := []custPair{{5550001111, 7001, 1250, 9001}}; !reflect.DeepEqual(w.customer.Pairs(), want) {
@@ -108,7 +108,7 @@ func TestTelegramReplyCopyablesAndLink(t *testing.T) {
 	}
 	// The mirror shows copyables and link as plain label: value lines.
 	posts := w.topics.Posts()
-	want := "🤖 <blockquote>Pay &lt;now&gt; &amp; done</blockquote>\nBank &lt;A&gt;: 1234 &amp; 5\nAlias: my.alias\nView your order: " + orderLink.URL
+	want := "🤖 Pay &lt;now&gt; &amp; done\nBank &lt;A&gt;: 1234 &amp; 5\nAlias: my.alias\nView your order: " + orderLink.URL
 	if len(posts) != 1 || posts[0].Text != want {
 		t.Errorf("mirror = %+v\nwant %q", posts, want)
 	}
@@ -144,7 +144,7 @@ func TestTelegramReplyWithMediaCarriesTheCaption(t *testing.T) {
 		t.Fatalf("sends = %+v", sends)
 	}
 	posts := w.topics.Posts()
-	if len(posts) != 1 || posts[0].Media == nil || posts[0].Text != "🤖 <blockquote>DuitNow &lt;QR&gt;</blockquote>\nAlias: my.alias" {
+	if len(posts) != 1 || posts[0].Media == nil || posts[0].Text != "🤖 DuitNow &lt;QR&gt;\nAlias: my.alias" {
 		t.Errorf("mirror = %+v", posts)
 	}
 }
@@ -162,7 +162,7 @@ func TestTelegramReplyMediaWithOnlyALinkKeepsTheButtonOnTheMedia(t *testing.T) {
 	if len(s) != 1 || s[0].Media.HTMLCaption != "Invoice" || len(s[0].Media.Buttons) != 1 || s[0].Media.Kind != "document" {
 		t.Fatalf("sends = %+v", s)
 	}
-	if p := w.topics.Posts(); len(p) != 1 || p[0].Text != "🤖 <blockquote>Invoice</blockquote>\nView your order: "+orderLink.URL {
+	if p := w.topics.Posts(); len(p) != 1 || p[0].Text != "🤖 Invoice\nView your order: "+orderLink.URL {
 		t.Errorf("mirror = %+v", p)
 	}
 }
@@ -363,7 +363,7 @@ func TestWhatsAppReplyLinkIsALineOfTheText(t *testing.T) {
 	if len(calls) != 1 || calls[0].Text != "Got your order.\n"+line {
 		t.Fatalf("calls = %+v", calls)
 	}
-	if p := w.topics.Posts(); len(p) != 1 || p[0].Text != "🤖 <blockquote>Got your order.</blockquote>\n"+line {
+	if p := w.topics.Posts(); len(p) != 1 || p[0].Text != "🤖 Got your order.\n"+line {
 		t.Errorf("mirror = %+v", p)
 	}
 }
@@ -384,7 +384,7 @@ func TestWhatsAppReplyLinkWithMediaAndCopyables(t *testing.T) {
 	if len(calls) != 2 || calls[0].Kind != "image" || calls[0].Text != "DuitNow QR\n"+line || calls[1].Text != "my.alias" {
 		t.Fatalf("calls = %+v", calls)
 	}
-	if p := w.topics.Posts(); len(p) != 1 || p[0].Text != "🤖 <blockquote>DuitNow QR</blockquote>\nAlias: my.alias\n"+line {
+	if p := w.topics.Posts(); len(p) != 1 || p[0].Text != "🤖 DuitNow QR\nAlias: my.alias\n"+line {
 		t.Errorf("mirror = %+v", p)
 	}
 }

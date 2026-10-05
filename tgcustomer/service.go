@@ -30,6 +30,8 @@ type Options struct {
 	Threads    Threads
 	Events     Events
 	Log        *zap.Logger
+
+	BoldCustomer bool // telegram.bold_customer_messages
 }
 
 // Service is the running customer bot. It is also the agentlink.CustomerChannel
@@ -82,7 +84,7 @@ func NewService(o Options) (*Service, error) {
 	s.cb = &customerBot{bot: bot, hc: hc, selfHosted: o.SelfHosted}
 	s.bridge = &Bridge{
 		CustomerFiles: s.cb, Topics: o.Topics, Sender: s.cb, Threads: o.Threads,
-		Pairs: s.pairs, Events: o.Events, Log: o.Log,
+		Pairs: s.pairs, Events: o.Events, Log: o.Log, BoldCustomer: o.BoldCustomer,
 	}
 
 	// One update at a time, in the order Telegram sent them: a customer's
@@ -179,7 +181,8 @@ func Init() (*Service, error) {
 	s, err := NewService(Options{
 		Token: token, APIURL: cfg.Telegram.APIURL, SelfHosted: cfg.Telegram.SelfHostedAPI,
 		DB: state.State.Database, Topics: hubTopics{}, Threads: dbThreads{}, Events: agentEvents{},
-		Log: state.State.Logger.Named("customerbot"),
+		Log:          state.State.Logger.Named("customerbot"),
+		BoldCustomer: cfg.Telegram.BoldCustomerMessages,
 	})
 	if err != nil {
 		return nil, err

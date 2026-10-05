@@ -41,7 +41,9 @@ type TopicPost struct {
 	// Kind is text, photo, video, animation, voice, audio, document, sticker,
 	// location or contact.
 	Kind     string
+	Prefix   string // the bridge's own words before Text, never bold
 	Text     string // the text, or the caption of a file
+	Bold     bool   // Text is the customer's own message: show it in bold
 	Data     []byte
 	Filename string
 	Mime     string
@@ -94,6 +96,10 @@ type Bridge struct {
 	Pairs         *Pairs
 	Events        Events
 	Log           *zap.Logger
+
+	// BoldCustomer shows customers' messages in bold in the topic
+	// (telegram.bold_customer_messages).
+	BoldCustomer bool
 
 	topicMu sync.Mutex
 }
@@ -304,7 +310,7 @@ func (b *Bridge) handleNew(ctx context.Context, msg *gotgbot.Message, thread int
 
 	var media []agentlink.Media
 	if c.fileID == "" {
-		b.post(ctx, thread, TopicPost{Kind: c.kind, Text: c.text, ReplyTo: replyTopic, Lat: c.lat, Lon: c.lon,
+		b.post(ctx, thread, TopicPost{Kind: c.kind, Text: c.text, Bold: b.BoldCustomer, ReplyTo: replyTopic, Lat: c.lat, Lon: c.lon,
 			Phone: c.phone, First: c.first, Last: c.last}, chatID, msg.MessageId)
 	} else {
 		m := agentlink.Media{Kind: c.mediaKind, Mime: c.mime, Filename: c.filename, Caption: c.text, Size: c.size}
@@ -338,7 +344,7 @@ func (b *Bridge) handleNew(ctx context.Context, msg *gotgbot.Message, thread int
 		media = []agentlink.Media{m}
 
 		if failure == "" {
-			b.post(ctx, thread, TopicPost{Kind: c.kind, Text: c.text, Data: data, Filename: c.filename, Mime: c.mime, ReplyTo: replyTopic}, chatID, msg.MessageId)
+			b.post(ctx, thread, TopicPost{Kind: c.kind, Text: c.text, Bold: b.BoldCustomer, Data: data, Filename: c.filename, Mime: c.mime, ReplyTo: replyTopic}, chatID, msg.MessageId)
 		} else {
 			note := notePrefix + "The customer sent a " + c.label
 			if c.size > 0 {
@@ -383,7 +389,7 @@ func (b *Bridge) handleEdit(ctx context.Context, msg *gotgbot.Message, thread in
 	} else if found {
 		replyTopic = id
 	}
-	b.post(ctx, thread, TopicPost{Kind: "text", Text: editPrefix + text, ReplyTo: replyTopic}, chatID, msg.MessageId)
+	b.post(ctx, thread, TopicPost{Kind: "text", Prefix: editPrefix, Text: text, Bold: b.BoldCustomer, ReplyTo: replyTopic}, chatID, msg.MessageId)
 
 	original := agentlink.HubMsgIDForTelegram(chatID, msg.MessageId)
 	_, replyHub := b.quoted(msg)

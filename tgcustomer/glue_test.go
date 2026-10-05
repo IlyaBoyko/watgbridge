@@ -343,3 +343,62 @@ func TestThreadsAndMigrationOnAnAlreadyPopulatedDatabase(t *testing.T) {
 		t.Errorf("the WhatsApp message pair changed: %d err=%v", tg, err)
 	}
 }
+
+func TestTopicTextBoldsOnlyTheCustomersWords(t *testing.T) {
+	cases := []struct {
+		name  string
+		p     TopicPost
+		limit int
+		want  string
+	}{
+		{"plain", TopicPost{Text: "a < b"}, 4096, "a &lt; b"},
+		{"bold and escaped", TopicPost{Text: "a < b & *c* _d_", Bold: true}, 4096, "<b>a &lt; b &amp; *c* _d_</b>"},
+		{"prefix stays plain", TopicPost{Prefix: "✏️ edited:\n", Text: "new <x>", Bold: true}, 4096, "✏️ edited:\n<b>new &lt;x&gt;</b>"},
+		{"empty body", TopicPost{Text: "", Bold: true}, 4096, ""},
+		{"caption over the limit stays plain", TopicPost{Text: strings.Repeat("a", 1020), Bold: true}, 1024, strings.Repeat("a", 1020)},
+		{"caption that fits is bold", TopicPost{Text: strings.Repeat("a", 1017), Bold: true}, 1024, "<b>" + strings.Repeat("a", 1017) + "</b>"},
+		{"the same text is bold as a message", TopicPost{Text: strings.Repeat("a", 1020), Bold: true}, 4096, "<b>" + strings.Repeat("a", 1020) + "</b>"},
+	}
+	for _, tc := range cases {
+		if got := topicText(tc.p, tc.limit); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Through the Hub bot's methods: the text of a message and a caption both go
+// out bold, each against its own limit.
+func TestHubTopicsPostSendsBoldCustomerText(t *testing.T) {
+	f := newFakeTG(t)
+	hub := newTestBot(t, f, "111:HUB")
+	hub.UseMiddleware(middlewares.ParseAsHTML)
+	withBridgeState(t, nil, hub, -1001234567890)
+	h := hubTopics{}
+
+	if _, err := h.Post(t.Context(), 1250, TopicPost{Kind: "text", Text: "a < b", Bold: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.CallsTo("sendMessage")[0].Form["text"]; got != "<b>a &lt; b</b>" {
+		t.Errorf("text = %q", got)
+	}
+	if _, err := h.Post(t.Context(), 1250, TopicPost{Kind: "photo", Text: "slip", Data: []byte("D"), Bold: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.CallsTo("sendPhoto")[0].Form["caption"]; got != "<b>slip</b>" {
+		t.Errorf("caption = %q", got)
+	}
+	// 1020 characters are a fine message in bold but not a caption in bold.
+	long := strings.Repeat("a", 1020)
+	if _, err := h.Post(t.Context(), 1250, TopicPost{Kind: "text", Text: long, Bold: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.CallsTo("sendMessage")[1].Form["text"]; got != "<b>"+long+"</b>" {
+		t.Error("a long text message must still be bold")
+	}
+	if _, err := h.Post(t.Context(), 1250, TopicPost{Kind: "photo", Text: long, Data: []byte("D"), Bold: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.CallsTo("sendPhoto")[1].Form["caption"]; got != long {
+		t.Error("a caption that bold would push over 1024 must stay as it was")
+	}
+}

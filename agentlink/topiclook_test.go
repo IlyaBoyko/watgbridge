@@ -6,18 +6,20 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"watgbridge/state"
 )
 
 // Protocol section 5b: how the Agent's posts look in the staff topic.
 
 /* ------------------------------------------------------------- rendering -- */
 
-func TestRenderMirrorEscapesAndQuotes(t *testing.T) {
+func TestRenderMirrorEscapesAndHasNoQuoteBox(t *testing.T) {
 	got, ok := renderMirror(mirrorParts{
 		Text:  "a < b & \"c\" > d",
 		Lines: []string{"Bank <A>: 12 & 3", "View: https://x.test/?a=1&b=2"},
 	}, tgTextLimit)
-	want := "🤖 <blockquote>a &lt; b &amp; &#34;c&#34; &gt; d</blockquote>\nBank &lt;A&gt;: 12 &amp; 3\nView: https://x.test/?a=1&amp;b=2"
+	want := "🤖 a &lt; b &amp; &#34;c&#34; &gt; d\nBank &lt;A&gt;: 12 &amp; 3\nView: https://x.test/?a=1&amp;b=2"
 	if !ok || !got.HTML || got.Text != want {
 		t.Errorf("got %+v (ok=%v), want HTML %q", got, ok, want)
 	}
@@ -29,13 +31,13 @@ func TestRenderMirrorSignatureOnlyWhenSet(t *testing.T) {
 		t.Errorf("no signature set, yet the mirror says %q", without.Text)
 	}
 	with, _ := renderMirror(mirrorParts{Text: "Boleh!", Lines: []string{"Alias: x"}, Signature: "Sent by Loki <16:01>"}, tgTextLimit)
-	want := "🤖 <blockquote>Boleh!</blockquote>\nAlias: x\n<i>✓ Sent by Loki &lt;16:01&gt;</i>"
+	want := "🤖 Boleh!\nAlias: x\n<i>✓ Sent by Loki &lt;16:01&gt;</i>"
 	if with.Text != want || !with.HTML {
 		t.Errorf("got %q, want %q", with.Text, want)
 	}
 }
 
-func TestRenderMirrorWithoutTextHasNoEmptyQuote(t *testing.T) {
+func TestRenderMirrorWithoutTextIsJustTheRobot(t *testing.T) {
 	got, _ := renderMirror(mirrorParts{}, tgCaptionLimit)
 	if got.Text != "🤖" {
 		t.Errorf("text-less mirror = %q", got.Text)
@@ -199,7 +201,7 @@ func TestSignatureIsOnlyOnTheTopicMirror(t *testing.T) {
 		t.Fatalf("result = %+v", res)
 	}
 	posts := w.topics.Posts()
-	want := "🤖 <blockquote>Boleh!</blockquote>\nAlias: clarus.pagos\n<i>✓ Sent by Loki · 16:01</i>"
+	want := "🤖 Boleh!\nAlias: clarus.pagos\n<i>✓ Sent by Loki · 16:01</i>"
 	if len(posts) != 1 || posts[0].Text != want || !posts[0].HTML {
 		t.Fatalf("mirror = %+v, want %q", posts, want)
 	}
@@ -260,7 +262,7 @@ func TestTelegramSignatureIsOnTheMirrorNotTheCustomer(t *testing.T) {
 	if !res.OK {
 		t.Fatalf("result = %+v", res)
 	}
-	want := "🤖 <blockquote>Pay &lt;now&gt;</blockquote>\nBank: 1234\nView your order: " + orderLink.URL + "\n<i>✓ Sent automatically · 16:01</i>"
+	want := "🤖 Pay &lt;now&gt;\nBank: 1234\nView your order: " + orderLink.URL + "\n<i>✓ Sent automatically · 16:01</i>"
 	if posts := w.topics.Posts(); len(posts) != 1 || posts[0].Text != want || !posts[0].HTML {
 		t.Fatalf("mirror = %+v, want %q", posts, want)
 	}
@@ -285,7 +287,7 @@ func TestTelegramLongCaptionSignatureFollowsTheText(t *testing.T) {
 	}
 	posts := w.topics.Posts()
 	if len(posts) != 2 || posts[0].Media == nil || posts[0].Text != "🤖" ||
-		posts[1].Text != "🤖 <blockquote>"+text+"</blockquote>\n<i>✓ Loki</i>" {
+		posts[1].Text != "🤖 "+text+"\n<i>✓ Loki</i>" {
 		t.Fatalf("posts = %+v", posts)
 	}
 }
@@ -546,5 +548,49 @@ func TestReplyWithoutNewFieldsBehavesAsBefore(t *testing.T) {
 	}
 	if len(w.topics.Deleted()) != 0 || len(w.topics.Edits()) != 0 || !cardKnown(t, w) {
 		t.Error("without replaces_card the card stays as it is")
+	}
+}
+
+/* ------------------------------------------- no quote box, never customer-bold -- */
+
+// The owner found the quote box hard to scan: the robot and the reply share the
+// first line, plain. Cards keep their bold title and quote.
+func TestAgentMirrorHasNoQuoteBoxOnEitherChannel(t *testing.T) {
+	got, _ := renderMirror(mirrorParts{Text: "Boleh!\nSecond line", Lines: []string{"Alias: x"}, Signature: "Loki"}, tgTextLimit)
+	if strings.Contains(got.Text, "blockquote") || !strings.HasPrefix(got.Text, "🤖 Boleh!\nSecond line\nAlias: x") {
+		t.Errorf("mirror = %q", got.Text)
+	}
+
+	w := newWorld(t)
+	w.executor().Handle(context.Background(), sendEnv(t, w, "A1", Send{Kind: "reply", Text: "Boleh!"}))
+	tw := tgWorld(t)
+	tw.executor().Handle(context.Background(), tgSend(t, tw, "A2", Send{Kind: "reply", Text: "Boleh!"}))
+	for name, posts := range map[string][]topicPost{"whatsapp": w.topics.Posts(), "telegram": tw.topics.Posts()} {
+		if len(posts) != 1 || posts[0].Text != "🤖 Boleh!" {
+			t.Errorf("%s mirror = %+v", name, posts)
+		}
+	}
+}
+
+// telegram.bold_customer_messages is about the customer's words: an agent post
+// is not one, whatever the setting.
+func TestAgentPostsAreNeverBoldedByTheCustomerSetting(t *testing.T) {
+	state.State.Config.Telegram.BoldCustomerMessages = true
+	t.Cleanup(func() { state.State.Config.Telegram.BoldCustomerMessages = false })
+
+	w := newWorld(t)
+	e := w.executor()
+	e.Handle(context.Background(), sendEnv(t, w, "A1", Send{Kind: "reply", Text: "Boleh!", Signature: "Loki"}))
+	e.Handle(context.Background(), sendEnv(t, w, "A2", Send{Kind: "note", Text: "slip ok"}))
+	e.Handle(context.Background(), cardEnv(t, w, "A3", Send{CardID: "d1", Title: "Draft", Text: "Boleh", Buttons: &draftButtons}))
+	for _, p := range w.topics.Posts() {
+		if strings.Contains(strings.ReplaceAll(p.Text, "<b>Draft</b>", ""), "<b>") {
+			t.Errorf("agent post carries customer bold: %q", p.Text)
+		}
+	}
+	for _, c := range w.topics.Cards() {
+		if strings.Contains(strings.ReplaceAll(c.Text, "<b>Draft</b>", ""), "<b>") {
+			t.Errorf("agent card carries customer bold: %q", c.Text)
+		}
 	}
 }

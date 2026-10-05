@@ -25,6 +25,7 @@ type bridgeContext struct {
 	tgBot        *gotgbot.Bot
 	waClient     *whatsmeow.Client
 	bridgedText  string
+	boldBody     bool // show the customer's own text in bold (telegram.bold_customer_messages)
 	replyToMsgId int64
 	threadId     int64
 	msgId        string
@@ -60,16 +61,37 @@ func (bc *bridgeContext) sendFallbackText(extraText string) {
 }
 
 // addCaption appends a caption (truncated at 1020 chars if needed) to
-// the bridged text.
-func addCaption(bridgedText *string, caption string) {
+// the bridged text. bold shows the caption in bold when it still fits a
+// Telegram caption (telegram.bold_customer_messages).
+func addCaption(bridgedText *string, caption string, bold bool) {
 	if caption == "" {
 		return
 	}
+	var body string
 	if len(caption) > 1020 {
-		*bridgedText += html.EscapeString(utils.SubString(caption, 0, 1020)) + "..."
+		body = html.EscapeString(utils.SubString(caption, 0, 1020)) + "..."
 	} else {
-		*bridgedText += html.EscapeString(caption)
+		body = html.EscapeString(caption)
 	}
+	if bold {
+		body = utils.BoldCustomerBody(*bridgedText, body, utils.TgCaptionLimit)
+	}
+	*bridgedText += body
+}
+
+// boldCustomer reports whether the body of this message is shown in bold: only
+// what a customer sent, never what the owner sent from the phone.
+func boldCustomer(cfg *state.Config, info waTypes.MessageInfo) bool {
+	return cfg.Telegram.BoldCustomerMessages && !info.IsFromMe
+}
+
+// appendBody adds a message's escaped body to the bridged text, in bold when
+// bridgeContext.boldBody is set and the whole message still fits limit.
+func (bc *bridgeContext) appendBody(body string, limit int) {
+	if bc.boldBody {
+		body = utils.BoldCustomerBody(bc.bridgedText, body, limit)
+	}
+	bc.bridgedText += body
 }
 
 // getContextInfo extracts the ContextInfo from any WhatsApp message type.

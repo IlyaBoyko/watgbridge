@@ -29,7 +29,8 @@ type mirrorParts struct {
 	Signature string   // set on the last message of a reply only
 }
 
-// renderMirror builds the mirror post: the robot, the reply in a blockquote,
+// renderMirror builds the mirror post: the robot and the reply on one line
+// (plain: the owner finds a quote box hard to scan),
 // the extra lines, then the signature. The bool is false when even the plain
 // fallback is over limit (counted the way Telegram does, in UTF-16 units).
 //
@@ -38,7 +39,7 @@ type mirrorParts struct {
 func renderMirror(p mirrorParts, limit int) (TopicText, bool) {
 	rich, plain := "🤖", "🤖"
 	if p.Text != "" {
-		rich += " <blockquote>" + esc(p.Text) + "</blockquote>"
+		rich += " " + esc(p.Text)
 		plain += " " + p.Text
 	}
 	for _, l := range p.Lines {

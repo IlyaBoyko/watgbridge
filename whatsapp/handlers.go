@@ -687,6 +687,7 @@ func MessageFromOthersEventHandler(text string, v *events.Message, isEdited bool
 		tgBot:        tgBot,
 		waClient:     waClient,
 		bridgedText:  bridgedText,
+		boldBody:     boldCustomer(cfg, v.Info),
 		replyToMsgId: replyToMsgId,
 		threadId:     threadId,
 		msgId:        msgId,
@@ -755,7 +756,7 @@ func (bc *bridgeContext) handleImageMessage(v *events.Message) {
 		return
 	}
 
-	addCaption(&bc.bridgedText, imageMsg.GetCaption())
+	addCaption(&bc.bridgedText, imageMsg.GetCaption(), bc.boldBody)
 
 	if bc.cfg.Telegram.SendImagesAsFile {
 		fileName := "image." + strings.Split(http.DetectContentType(imageBytes), "/")[1]
@@ -802,7 +803,7 @@ func (bc *bridgeContext) handleGifMessage(v *events.Message) {
 		return
 	}
 
-	addCaption(&bc.bridgedText, gifMsg.GetCaption())
+	addCaption(&bc.bridgedText, gifMsg.GetCaption(), bc.boldBody)
 
 	sentMsg, _ := bc.tgBot.SendAnimation(bc.cfg.Telegram.TargetChatID,
 		&gotgbot.FileReader{Name: "animation.gif", Data: bytes.NewReader(gifBytes)},
@@ -843,7 +844,7 @@ func (bc *bridgeContext) handleVideoMessage(v *events.Message) {
 		return
 	}
 
-	addCaption(&bc.bridgedText, videoMsg.GetCaption())
+	addCaption(&bc.bridgedText, videoMsg.GetCaption(), bc.boldBody)
 
 	fileToSend := gotgbot.FileReader{
 		Name: "video." + strings.Split(videoMsg.GetMimetype(), "/")[1],
@@ -955,7 +956,7 @@ func (bc *bridgeContext) handleDocumentMessage(v *events.Message) {
 		return
 	}
 
-	addCaption(&bc.bridgedText, documentMsg.GetCaption())
+	addCaption(&bc.bridgedText, documentMsg.GetCaption(), bc.boldBody)
 
 	sentMsg, _ := bc.tgBot.SendDocument(bc.cfg.Telegram.TargetChatID,
 		&gotgbot.FileReader{Name: documentMsg.GetFileName(), Data: bytes.NewReader(documentBytes)},
@@ -1207,10 +1208,9 @@ func (bc *bridgeContext) handleTextOrReaction(text string, v *events.Message, is
 	}
 
 	// Truncate very long text
+	body := html.EscapeString(text)
 	if len(text) > 4000 {
-		bc.bridgedText += html.EscapeString(utils.SubString(text, 0, 4000)) + "..."
-	} else {
-		bc.bridgedText += html.EscapeString(text)
+		body = html.EscapeString(utils.SubString(text, 0, 4000)) + "..."
 	}
 
 	// Replace @mentions with links
@@ -1218,12 +1218,18 @@ func (bc *bridgeContext) handleTextOrReaction(text string, v *events.Message, is
 		for _, jid := range mentioned {
 			parsedJid, _ := utils.WaParseJID(jid)
 			name := utils.WaGetContactName(parsedJid)
-			bc.bridgedText = strings.ReplaceAll(
-				bc.bridgedText, "@"+parsedJid.User,
-				fmt.Sprintf("<a href=\"https://wa.me/%s\">@%s</a>", parsedJid.User, html.EscapeString(name)),
-			)
+			link := fmt.Sprintf("<a href=\"https://wa.me/%s\">@%s</a>", parsedJid.User, html.EscapeString(name))
+			bc.bridgedText = strings.ReplaceAll(bc.bridgedText, "@"+parsedJid.User, link)
+			body = strings.ReplaceAll(body, "@"+parsedJid.User, link)
 		}
 	}
+
+	// An edit of a captioned file is a caption, which is shorter than a text.
+	limit := utils.TgTextLimit
+	if isEdited && !bc.cfg.WhatsApp.SendEditedMessageUpdates && isDocument {
+		limit = utils.TgCaptionLimit
+	}
+	bc.appendBody(body, limit)
 
 	// Send (edit-in-place or new message)
 	var sentMsg *gotgbot.Message
