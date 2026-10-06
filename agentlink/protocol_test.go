@@ -75,11 +75,6 @@ func TestFixturesRoundTrip(t *testing.T) {
 
 	// Every message type of the protocol must be covered by a fixture too.
 	for typ := range payloadTypes {
-		// presence (protocol 5d) has its shape pinned in presence_test.go until
-		// clarus-agent ships a fixture for it; then this exception goes.
-		if typ == TypePresence {
-			continue
-		}
 		if !seen[typ] {
 			t.Errorf("no fixture covers type %q", typ)
 		}

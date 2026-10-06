@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000B1",
+  "type": "presence",
+  "ts": "2026-10-06T09:30:12.345Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "state": "typing",
+    "expires_at": "2026-10-06T09:32:12.345Z"
+  }
+}

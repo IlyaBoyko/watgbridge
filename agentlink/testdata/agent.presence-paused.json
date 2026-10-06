@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000B2",
+  "type": "presence",
+  "ts": "2026-10-06T09:30:42.345Z",
+  "payload": {
+    "conversation": "tg:5550001111",
+    "state": "paused",
+    "expires_at": "2026-10-06T09:31:42.345Z"
+  }
+}
