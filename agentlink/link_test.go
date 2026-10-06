@@ -324,7 +324,7 @@ func TestInvalidFramesGetAnErrorAndTheConnectionStays(t *testing.T) {
 			t.Error(err)
 		}
 		// Unknown type.
-		s.write("U1", "presence", map[string]string{})
+		s.write("U1", "shout", map[string]string{})
 		// A type that exists but is never sent to a Hub.
 		s.write("U2", TypeCustomerMessage, map[string]string{})
 		// A send that violates the schema (no expires_at).

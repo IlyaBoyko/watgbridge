@@ -188,3 +188,24 @@ func (bridgeState) PairIDsFor(tgMsgID, tgThreadID int64, waChat string) ([]strin
 	}
 	return ids, nil
 }
+
+// waPresence implements WAPresence on whatsmeow.
+type waPresence struct{}
+
+// SetComposing sends to the same JID a send to this chat goes to: `to` is the
+// chat key, which is a LID when no phone number is known for the chat.
+func (waPresence) SetComposing(ctx context.Context, to string, composing bool) error {
+	c, err := waClient()
+	if err != nil {
+		return err
+	}
+	jid, err := waTypes.ParseJID(to)
+	if err != nil {
+		return err
+	}
+	state := waTypes.ChatPresencePaused
+	if composing {
+		state = waTypes.ChatPresenceComposing
+	}
+	return c.SendChatPresence(ctx, jid, state, waTypes.ChatPresenceMediaText)
+}

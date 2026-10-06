@@ -128,3 +128,10 @@ func (topicPoster) DeleteMessage(_ context.Context, chatID, msgID int64) error {
 	_, err = b.DeleteMessage(chatID, msgID, nil)
 	return err
 }
+
+// typingOf is the Telegram side of "typing...": the customer bot, when it can
+// show it. A nil customer (the bot is off) has none.
+func typingOf(c CustomerChannel) TGPresence {
+	t, _ := c.(TGPresence)
+	return t
+}

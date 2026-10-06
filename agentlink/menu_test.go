@@ -13,8 +13,8 @@ var telegramCommandName = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
 // H5: the entries must be accepted by Telegram's setMyCommands.
 func TestMenuCommandsAreValidForTelegram(t *testing.T) {
 	cmds := MenuCommands()
-	if len(cmds) != 7 {
-		t.Fatalf("want 7 agent commands, got %d", len(cmds))
+	if len(cmds) != 8 {
+		t.Fatalf("want 8 agent commands, got %d", len(cmds))
 	}
 	seen := map[string]bool{}
 	for _, c := range cmds {
@@ -37,6 +37,18 @@ func TestMenuCommandsAreValidForTelegram(t *testing.T) {
 			t.Errorf("%s is not a valid control name", c.Command)
 		}
 	}
+}
+
+func TestMenuHasAIOrders(t *testing.T) {
+	for _, c := range MenuCommands() {
+		if c.Command == "ai_orders" {
+			if c.Description != "Customer's recent website orders with links: /ai_orders [count]" {
+				t.Errorf("description = %q", c.Description)
+			}
+			return
+		}
+	}
+	t.Fatal("ai_orders is not in the menu")
 }
 
 func TestMenuCommandsReturnsACopy(t *testing.T) {
@@ -62,7 +74,7 @@ func TestWithMenuCommandsOnlyWhenAgentEnabled(t *testing.T) {
 	if on[0].Command != "start" || on[1].Command != "help" {
 		t.Fatalf("the bridge's own commands must come first, got %v", on[:2])
 	}
-	if on[2].Command != "ai_status" || on[len(on)-1].Command != "ai_slip" {
+	if on[2].Command != "ai_status" || on[len(on)-1].Command != "ai_orders" {
 		t.Fatalf("agent commands must follow in order, got %v", on[2:])
 	}
 	if len(base) != 2 {

@@ -130,6 +130,9 @@ type Executor struct {
 	Clock    Clock
 	Guard    *SentGuard
 	Log      *zap.Logger
+	// Presence is told when a reply to a conversation starts and ends, so its
+	// "typing..." stops. Nil when there is none.
+	Presence ReplyPresence
 }
 
 const (
@@ -170,6 +173,10 @@ func (e *Executor) run(ctx context.Context, env Envelope) Result {
 		}
 		switch p.Kind {
 		case "reply":
+			// Before the first message, so a refresh cannot land after it; and again
+			// at the end, in case a late typing started one while it went out.
+			e.stopTyping(p.Conversation)
+			defer e.stopTyping(p.Conversation)
 			return e.sendReply(ctx, p)
 		case "note":
 			return e.sendNote(ctx, p)
@@ -461,4 +468,10 @@ func (e *Executor) mirror(ctx context.Context, key string, thread int64, waID st
 		e.Log.Error("agent link: could not record the mirror's message pair", zap.String("wa_msg_id", waID), zap.Error(err))
 	}
 	return true
+}
+
+func (e *Executor) stopTyping(conversation string) {
+	if e.Presence != nil {
+		e.Presence.Stop(conversation)
+	}
 }

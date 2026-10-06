@@ -39,6 +39,8 @@ func Start(ctx context.Context, customer CustomerChannel) error {
 		Bridge:     bridgeState{},
 		WA:         waSender{},
 		Customer:   customer,
+		WAPresence: waPresence{},
+		TGPresence: typingOf(customer),
 		MarkRead:   readReceiptHook(cfg),
 		Topics:     topicPoster{},
 		Notifier:   ownerNotifier{},

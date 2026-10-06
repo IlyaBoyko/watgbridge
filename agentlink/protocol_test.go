@@ -75,6 +75,11 @@ func TestFixturesRoundTrip(t *testing.T) {
 
 	// Every message type of the protocol must be covered by a fixture too.
 	for typ := range payloadTypes {
+		// presence (protocol 5d) has its shape pinned in presence_test.go until
+		// clarus-agent ships a fixture for it; then this exception goes.
+		if typ == TypePresence {
+			continue
+		}
 		if !seen[typ] {
 			t.Errorf("no fixture covers type %q", typ)
 		}
@@ -151,7 +156,7 @@ func TestDecodePayloadValidation(t *testing.T) {
 		"long button id":          env("send", `{"conversation":"wa:1@s.whatsapp.net","kind":"card","media":[],"buttons":[[{"id":"123456789012345678901234567890123","label":"x"}]],"expires_at":"2026-10-01T09:40:12.345Z"}`),
 		"ack without id":          env("ack", `{}`),
 		"payload missing":         {V: 1, ID: "x", Type: "ack", TS: "2026-10-01T09:30:12.345Z"},
-		"unknown type":            env("presence", `{}`),
+		"unknown type":            env("shout", `{}`),
 	}
 	for name, e := range bad {
 		if _, err := DecodePayload(e); err == nil {

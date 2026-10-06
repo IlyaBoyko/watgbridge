@@ -28,6 +28,10 @@ type LinkOptions struct {
 	HubID      string
 	HubVersion string
 	Channels   []string
+	// Features is what hello declares (protocol section 5d). Empty declares none.
+	Features []string
+	// Presence receives the validated `presence` frames. Nil drops them.
+	Presence PresenceSink
 
 	PingInterval     time.Duration // protocol: 30 s
 	DeadAfter        time.Duration // protocol: 90 s of silence
@@ -86,6 +90,9 @@ type Link struct {
 	wake  chan struct{} // an event was queued
 	outCh chan []byte   // frames that are not outbox events: results, errors
 	cmdCh chan Envelope
+	// presenceCh feeds the presence worker, apart from cmdCh: "typing..." must
+	// never wait behind a send, and a send never behind it.
+	presenceCh chan Presence
 
 	notifyOnce sync.Once
 	connected  atomic.Bool
@@ -98,10 +105,11 @@ func NewLink(opt LinkOptions, outbox *Outbox, cmds CommandHandler, notifier Owne
 	}
 	return &Link{
 		opt: opt, outbox: outbox, cmds: cmds, notifier: notifier, clock: clock, log: log,
-		rnd:   rand.Float64,
-		wake:  make(chan struct{}, 1),
-		outCh: make(chan []byte, 256),
-		cmdCh: make(chan Envelope, 1024),
+		rnd:        rand.Float64,
+		wake:       make(chan struct{}, 1),
+		outCh:      make(chan []byte, 256),
+		cmdCh:      make(chan Envelope, 1024),
+		presenceCh: make(chan Presence, 256),
 	}
 }
 
@@ -149,6 +157,7 @@ func Backoff(attempt int, min, max time.Duration, rnd func() float64) time.Durat
 // that means "do not reconnect".
 func (l *Link) Run(ctx context.Context) error {
 	go l.worker(ctx)
+	go l.presenceWorker(ctx)
 
 	attempt := 0
 	for {
@@ -222,7 +231,7 @@ func (l *Link) session(ctx context.Context) (welcomed bool, err error) {
 
 	// Handshake: hello, then nothing else until welcome.
 	hello, err := NewEnvelope(NewULID(l.clock.Now()), TypeHello, l.clock.Now(), Hello{
-		HubID: l.opt.HubID, Protocol: ProtocolVersion, HubVersion: l.opt.HubVersion, Channels: l.opt.Channels,
+		HubID: l.opt.HubID, Protocol: ProtocolVersion, HubVersion: l.opt.HubVersion, Channels: l.opt.Channels, Features: l.opt.Features,
 	})
 	if err != nil {
 		return false, err
@@ -420,6 +429,20 @@ func (l *Link) handleFrame(data []byte) {
 			l.queueFrame(TypeResult, Result{CommandID: env.ID, OK: false, Error: ErrRateLimited})
 		}
 
+	case TypePresence:
+		// Not a command: no result, no id memory. A bad one is answered like any
+		// schema violation; a good one is handed on without waiting.
+		p, err := DecodePayload(env)
+		if err != nil {
+			l.queueError(env.ID, "schema", err.Error())
+			return
+		}
+		select {
+		case l.presenceCh <- *p.(*Presence):
+		default:
+			l.log.Debug("agent link: presence queue full, dropped a frame")
+		}
+
 	case TypeError:
 		var pe ProtocolError
 		_ = json.Unmarshal(env.Payload, &pe)
@@ -467,4 +490,20 @@ func (l *Link) queueError(refID, code, message string) {
 	l.log.Warn("agent link: invalid frame from agent",
 		zap.String("ref_id", refID), zap.String("code", code), zap.String("message", message))
 	l.queueFrame(TypeError, ProtocolError{RefID: refID, Code: code, Message: message})
+}
+
+// presenceWorker applies `presence` frames one at a time, in arrival order, so
+// a paused can never overtake the typing before it. A slow channel only delays
+// later presence frames, never a send.
+func (l *Link) presenceWorker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case p := <-l.presenceCh:
+			if l.opt.Presence != nil {
+				l.opt.Presence.HandlePresence(ctx, p)
+			}
+		}
+	}
 }

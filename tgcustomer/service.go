@@ -46,7 +46,10 @@ type Service struct {
 	log     *zap.Logger
 }
 
-var _ agentlink.CustomerChannel = (*Service)(nil)
+var (
+	_ agentlink.CustomerChannel = (*Service)(nil)
+	_ agentlink.TGPresence      = (*Service)(nil)
+)
 
 // perMessageTimeout bounds one update: a download, a topic post and an event.
 const perMessageTimeout = 3 * time.Minute
@@ -233,4 +236,9 @@ func HandleTopicMessage(b *gotgbot.Bot, c *ext.Context) bool {
 	}
 	utils.SendMessageConfirmation(b, c, state.State.Config, msg, nil)
 	return true
+}
+
+// SendTyping is agentlink.TGPresence.
+func (s *Service) SendTyping(ctx context.Context, chatID int64) error {
+	return s.cb.SendTyping(ctx, chatID)
 }

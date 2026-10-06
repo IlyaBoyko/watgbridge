@@ -306,3 +306,10 @@ func (agentEvents) Customer(in agentlink.CustomerInput) error {
 	return agentlink.EmitCustomerMessage(in)
 }
 func (agentEvents) Staff(in agentlink.StaffInput) error { return agentlink.EmitStaffMessage(in) }
+
+// SendTyping shows "typing..." in a customer's chat. Telegram clears it after
+// 5 seconds, so the caller repeats it. Errors are the caller's to log.
+func (c *customerBot) SendTyping(ctx context.Context, chatID int64) error {
+	_, err := c.bot.SendChatActionWithContext(ctx, chatID, "typing", nil)
+	return err
+}

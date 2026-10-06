@@ -36,6 +36,11 @@ type Deps struct {
 	Clock      Clock
 	Log        *zap.Logger
 	HubVersion string
+	// WAPresence and TGPresence show "typing..." to customers; nil turns that
+	// channel off. Presence holds their timings (tests).
+	WAPresence WAPresence
+	TGPresence TGPresence
+	Presence   PresenceOptions
 	// Link timing overrides, for tests. Zero means the protocol defaults.
 	Link LinkOptions
 }
@@ -54,6 +59,8 @@ type Hub struct {
 	guard  *SentGuard
 	link   *Link
 	exec   *Executor
+	// presence keeps "typing..." alive; nil on a disabled Hub.
+	presence *PresenceKeeper
 
 	runOnce sync.Once
 	done    chan struct{}
@@ -98,6 +105,10 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 	h.prune()
 
 	h.exec = &Executor{WA: d.WA, Topics: d.Topics, Customer: d.Customer, Bridge: d.Bridge, MarkRead: d.MarkRead, Memory: h.mem, Cards: h.cards, Clock: d.Clock, Guard: h.guard, Log: d.Log}
+	po := d.Presence
+	po.WA, po.TG, po.Bridge, po.Clock, po.Log = d.WAPresence, d.TGPresence, d.Bridge, d.Clock, d.Log
+	h.presence = NewPresenceKeeper(po)
+	h.exec.Presence = h.presence
 	opt := d.Link
 	if len(opt.Channels) == 0 {
 		opt.Channels = []string{"wa"}
@@ -106,6 +117,10 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 		}
 	}
 	opt.URL, opt.Token, opt.HubID, opt.HubVersion = cfg.URL, cfg.Token, cfg.HubID, d.HubVersion
+	opt.Presence = h.presence
+	if opt.Features == nil {
+		opt.Features = []string{FeaturePresence}
+	}
 	h.link = NewLink(opt, h.outbox, h.exec, d.Notifier, d.Clock, d.Log)
 	return h, nil
 }
@@ -151,7 +166,9 @@ func (h *Hub) Start(ctx context.Context) {
 					}
 				}
 			}()
-			if err := h.link.Run(ctx); err != nil && ctx.Err() == nil {
+			err := h.link.Run(ctx)
+			h.presence.StopAll()
+			if err != nil && ctx.Err() == nil {
 				h.log.Error("agent link: not running any more", zap.Error(err))
 			}
 		}()

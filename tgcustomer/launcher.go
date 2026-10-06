@@ -42,7 +42,10 @@ type Launcher struct {
 	polling bool
 }
 
-var _ agentlink.CustomerChannel = (*Launcher)(nil)
+var (
+	_ agentlink.CustomerChannel = (*Launcher)(nil)
+	_ agentlink.TGPresence      = (*Launcher)(nil)
+)
 
 // Run starts the background attempts and returns at once.
 func (l *Launcher) Run(ctx context.Context) {
@@ -145,4 +148,13 @@ func (l *Launcher) HubMsgIDOfTopicMsg(threadID, topicMsgID int64) string {
 		return ""
 	}
 	return s.HubMsgIDOfTopicMsg(threadID, topicMsgID)
+}
+
+// SendTyping is agentlink.TGPresence: nothing to show until the bot is up.
+func (l *Launcher) SendTyping(ctx context.Context, chatID int64) error {
+	s := l.svc.Load()
+	if s == nil {
+		return ErrNotRunning
+	}
+	return s.SendTyping(ctx, chatID)
 }

@@ -29,6 +29,7 @@ const (
 	TypeSend            = "send"
 	TypeEditCard        = "edit_card"
 	TypeAck             = "ack"
+	TypePresence        = "presence"
 )
 
 // Close codes (protocol §8).
@@ -112,7 +113,13 @@ type Hello struct {
 	Protocol   int      `json:"protocol"`
 	HubVersion string   `json:"hub_version"`
 	Channels   []string `json:"channels"`
+	// Features lists the optional message types this Hub handles (protocol
+	// section 5d). An older Agent ignores the field.
+	Features []string `json:"features,omitempty"`
 }
+
+// FeaturePresence says the Hub handles `presence` (protocol section 5d).
+const FeaturePresence = "presence"
 
 type Welcome struct {
 	Protocol     int    `json:"protocol"`
@@ -214,6 +221,20 @@ type EditCard struct {
 	ExpiresAt    string   `json:"expires_at"`
 }
 
+// Presence is "typing..." for a customer (protocol section 5d). It is not a
+// command: nothing answers it and nothing is stored.
+type Presence struct {
+	Conversation string `json:"conversation"`
+	State        string `json:"state"`
+	ExpiresAt    string `json:"expires_at"`
+}
+
+// Presence states.
+const (
+	PresenceTyping = "typing"
+	PresencePaused = "paused"
+)
+
 type Ack struct {
 	ID string `json:"id"`
 }
@@ -238,6 +259,7 @@ var payloadTypes = map[string]func() any{
 	TypeSend:            func() any { return &Send{} },
 	TypeEditCard:        func() any { return &EditCard{} },
 	TypeAck:             func() any { return &Ack{} },
+	TypePresence:        func() any { return &Presence{} },
 }
 
 // KnownType reports whether t is a protocol v1 message type.
@@ -436,6 +458,16 @@ func (e *EditCard) Validate() error {
 		return fmt.Errorf("edit_card.title is longer than %d characters", MaxTitle)
 	}
 	return validateISO("edit_card.expires_at", e.ExpiresAt)
+}
+
+func (p *Presence) Validate() error {
+	if !conversationRe.MatchString(p.Conversation) {
+		return fmt.Errorf("presence.conversation is not a channel-prefixed id")
+	}
+	if p.State != PresenceTyping && p.State != PresencePaused {
+		return fmt.Errorf("presence.state %q is not valid", p.State)
+	}
+	return validateISO("presence.expires_at", p.ExpiresAt)
 }
 
 func (a *Ack) Validate() error {

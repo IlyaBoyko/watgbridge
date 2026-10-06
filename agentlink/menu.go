@@ -13,6 +13,7 @@ var menuCommands = []gotgbot.BotCommand{
 	{Command: "ai_off", Description: "Agent stays silent in this chat"},
 	{Command: "ai_once", Description: "One-off instruction for the next reply: /ai_once <text>"},
 	{Command: "ai_slip", Description: "Send the customer's latest slip for checking: /ai_slip <order ref>"},
+	{Command: "ai_orders", Description: "Customer's recent website orders with links: /ai_orders [count]"},
 }
 
 // MenuCommands returns a copy of the agent's menu entries.
