@@ -281,15 +281,11 @@ func OnTopicMessage(c *ext.Context) {
 	}
 }
 
-// isStaffUser is the rule of utils.TgUpdateIsAuthorized (owner and sudo
-// users) without its side effect: that function answers a denied callback
-// query itself, and the link needs to word that answer.
-func isStaffUser(u *gotgbot.User) bool {
-	if u == nil {
-		return false
-	}
-	cfg := state.State.Config
-	return u.Id == cfg.Telegram.OwnerID || slices.Contains(cfg.Telegram.SudoUsersID, u.Id)
+// isStaffUser is the rule of utils.TgUpdateIsAuthorized (owner, sudo users
+// and staff-group admins) without its side effect: that function answers a
+// denied callback query itself, and the link needs to word that answer.
+func isStaffUser(b *gotgbot.Bot, u *gotgbot.User) bool {
+	return u != nil && utils.IsStaffUserID(b, u.Id)
 }
 
 // IsCardCallbackQuery tells the dispatcher which callback queries are for the
@@ -307,7 +303,7 @@ func CardCallbackHandler(b *gotgbot.Bot, c *ext.Context) error {
 	}
 	h := current.Load() // may be nil: a nil Hub is a disabled one
 	in := CallbackInput{Data: cq.Data}
-	if u := c.EffectiveSender.User; isStaffUser(u) {
+	if u := c.EffectiveSender.User; isStaffUser(b, u) {
 		in.Authorized, in.UserID, in.UserName = true, u.Id, tgUserName(u)
 	}
 	_, err := cq.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: h.HandleCallback(in)})
