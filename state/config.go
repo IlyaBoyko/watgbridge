@@ -106,6 +106,19 @@ type Config struct {
 		Enabled  bool   `yaml:"enabled"`
 		BotToken string `yaml:"bot_token"`
 	} `yaml:"customer_bot"`
+
+	// Lazada IM for this Hub's market (docs/LAZADA.md in the clarus repo). The
+	// app credentials are the In-house Chat app's; the tokens live in the DB.
+	Lazada struct {
+		Enabled           bool   `yaml:"enabled"`
+		AppKey            string `yaml:"app_key"`
+		AppSecret         string `yaml:"app_secret"`
+		APIURL            string `yaml:"api_url"`             // default https://api.lazada.com.my/rest
+		AuthURL           string `yaml:"auth_url"`            // default https://auth.lazada.com/rest
+		SafetyPollSeconds int    `yaml:"safety_poll_seconds"` // default 180
+		ActivePollSeconds int    `yaml:"active_poll_seconds"` // default 15; 0 = off (push working)
+		TextLimit         int    `yaml:"text_limit"`          // default 1000 characters (runes)
+	} `yaml:"lazada"`
 }
 
 func (cfg *Config) LoadConfig() error {
@@ -149,6 +162,40 @@ func (cfg *Config) LoadConfig() error {
 		}
 	}
 
+	return cfg.validateLazada()
+}
+
+// validateLazada refills blanks a config file left behind (an explicit empty
+// url or a zero interval would otherwise disable the channel silently) and
+// refuses to start a Lazada channel that has no credentials. Nothing is
+// checked while the channel is off, so a stock config keeps booting. The
+// secret is never put in the message.
+func (cfg *Config) validateLazada() error {
+	lz := &cfg.Lazada
+	if lz.APIURL == "" {
+		lz.APIURL = defaultLazadaAPIURL
+	}
+	if lz.AuthURL == "" {
+		lz.AuthURL = defaultLazadaAuthURL
+	}
+	if lz.SafetyPollSeconds <= 0 {
+		lz.SafetyPollSeconds = defaultLazadaSafetyPollSeconds
+	}
+	if lz.TextLimit <= 0 {
+		lz.TextLimit = defaultLazadaTextLimit
+	}
+	// 0 is meaningful here (push works, no active polling); only a negative
+	// value is a mistake.
+	if lz.ActivePollSeconds < 0 {
+		lz.ActivePollSeconds = 0
+	}
+
+	if !lz.Enabled {
+		return nil
+	}
+	if lz.AppKey == "" || lz.AppSecret == "" {
+		return fmt.Errorf("lazada.enabled is true but lazada.app_key or lazada.app_secret is empty")
+	}
 	return nil
 }
 
@@ -174,6 +221,14 @@ func (cfg *Config) SaveConfig() error {
 	return nil
 }
 
+const (
+	defaultLazadaAPIURL            = "https://api.lazada.com.my/rest"
+	defaultLazadaAuthURL           = "https://auth.lazada.com/rest"
+	defaultLazadaSafetyPollSeconds = 180
+	defaultLazadaActivePollSeconds = 15
+	defaultLazadaTextLimit         = 1000
+)
+
 func (cfg *Config) SetDefaults() {
 	cfg.TimeZone = "UTC"
 
@@ -190,6 +245,12 @@ func (cfg *Config) SetDefaults() {
 	cfg.Backup.Mode = "none"
 	cfg.Backup.CronSchedule = "0 0 * * *"
 	cfg.Backup.ThreadName = "Database Backups"
+
+	cfg.Lazada.APIURL = defaultLazadaAPIURL
+	cfg.Lazada.AuthURL = defaultLazadaAuthURL
+	cfg.Lazada.SafetyPollSeconds = defaultLazadaSafetyPollSeconds
+	cfg.Lazada.ActivePollSeconds = defaultLazadaActivePollSeconds
+	cfg.Lazada.TextLimit = defaultLazadaTextLimit
 
 	cfg.Agent.OutboxMaxAgeDays = 0 // keep undelivered events until the Agent acknowledges them
 }

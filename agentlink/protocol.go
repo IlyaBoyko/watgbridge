@@ -30,6 +30,7 @@ const (
 	TypeEditCard        = "edit_card"
 	TypeAck             = "ack"
 	TypePresence        = "presence"
+	TypeLzPoll          = "lz_poll"
 )
 
 // Close codes (protocol §8).
@@ -120,6 +121,10 @@ type Hello struct {
 
 // FeaturePresence says the Hub handles `presence` (protocol section 5d).
 const FeaturePresence = "presence"
+
+// FeatureLzPoll says the Hub runs the Lazada channel and handles `lz_poll`
+// (protocol section 5e).
+const FeatureLzPoll = "lz_poll"
 
 type Welcome struct {
 	Protocol     int    `json:"protocol"`
@@ -229,6 +234,13 @@ type Presence struct {
 	ExpiresAt    string `json:"expires_at"`
 }
 
+// LzPoll asks the Lazada channel to fetch now (protocol section 5e): the Agent
+// got a Lazada push. Like Presence it is not a command. An empty SessionID
+// means every session.
+type LzPoll struct {
+	SessionID string `json:"session_id,omitempty"`
+}
+
 // Presence states.
 const (
 	PresenceTyping = "typing"
@@ -260,6 +272,7 @@ var payloadTypes = map[string]func() any{
 	TypeEditCard:        func() any { return &EditCard{} },
 	TypeAck:             func() any { return &Ack{} },
 	TypePresence:        func() any { return &Presence{} },
+	TypeLzPoll:          func() any { return &LzPoll{} },
 }
 
 // KnownType reports whether t is a protocol v1 message type.
@@ -469,6 +482,9 @@ func (p *Presence) Validate() error {
 	}
 	return validateISO("presence.expires_at", p.ExpiresAt)
 }
+
+// Validate accepts any session id: it is opaque, and an absent one means all.
+func (p *LzPoll) Validate() error { return nil }
 
 func (a *Ack) Validate() error {
 	if a.ID == "" {

@@ -59,6 +59,20 @@ customer_bot:
   enabled: false                         # true TAKES OVER this bot: its webhook is deleted at start, so a website that receives the bot's updates through a webhook stops receiving them (a bot can have only one consumer). Leave false until that is intended.
   bot_token: ""                          # The customer bot's own token, never the staff bot's. Customers' /start <payload> reaches the Agent as an ordinary customer message.
 
+# Lazada Instant Messaging for this market (MY only). Lazada chats become topics
+# in target_chat_id, titled "Lazada · <buyer>". The keys are the In-house Chat
+# app's. The access and refresh tokens are never put here: the Hub keeps them in
+# its database after the owner sends /lazada_auth <code>.
+lazada:
+  enabled: false                         # true needs app_key and app_secret, or the Hub refuses to start
+  app_key: ""
+  app_secret: ""                         # Keep it out of chat and git
+  api_url: https://api.lazada.com.my/rest  # The region's API host (MY)
+  auth_url: https://auth.lazada.com/rest   # Token create/refresh host, the same for every region
+  safety_poll_seconds: 180               # Fetch every session this often even if no push arrived. Pushes are not queued, so this bounds the delay when the Agent or the link is down
+  active_poll_seconds: 15                # While a Lazada chat is active, also fetch this often. 0 = off: set it once pushes reach the Agent
+  text_limit: 1000                       # Longest single message sent to Lazada, in characters. Longer replies are split
+
 whatsapp:
   session_name: watgbridge        # This will appear in your Linked Devices in mobile app
   # Which WhatsApp client the session registers as. "android" (default) and
