@@ -20,9 +20,6 @@ const (
 	notePrefix = "ℹ️ "
 	// topicNameMax is Telegram's limit for a topic name.
 	topicNameMax = 128
-	// SendingNotYet is what staff get for a message typed into a Lazada topic
-	// until sending to Lazada exists.
-	SendingNotYet = "Sending to Lazada from the topic comes in the next update."
 )
 
 // TopicPost is one post made by the Hub bot into the staff group. Text is
@@ -114,6 +111,14 @@ type Options struct {
 	ActiveEvery time.Duration
 
 	BoldCustomer bool // telegram.bold_customer_messages
+
+	// TextLimit is the most runes one Lazada message gets (lazada.text_limit);
+	// 0 means 1000.
+	TextLimit int
+	// PollAfterSend is how long after a send the session is fetched once, to
+	// catch Lazada's content filter (LAZADA.md A6). 0 means 5 s; negative turns
+	// it off.
+	PollAfterSend time.Duration
 }
 
 // Service is the running Lazada channel: the fetcher, the mapping into topics
@@ -140,9 +145,17 @@ type Service struct {
 	// rounds counts finished fetch rounds, whatever their outcome (tests wait on it).
 	rounds atomic.Int64
 
+	// opMu makes a fetch round and a send exclude each other (see SendText): a
+	// message the Hub sent is in lazada_sent before any fetch can see it.
+	opMu sync.Mutex
+
 	topicMu sync.Mutex
 	// keysLogged remembers which template ids had their content keys logged.
 	keysLogged sync.Map
+
+	// life ends with Stop; sends and their delayed polls refuse to start after it.
+	life     context.Context
+	stopLife context.CancelFunc
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -169,7 +182,9 @@ func NewService(o Options) (*Service, error) {
 	if err := Migrate(o.DB); err != nil {
 		return nil, fmt.Errorf("lazada: migrate: %w", err)
 	}
+	life, stopLife := context.WithCancel(context.Background())
 	return &Service{
+		life: life, stopLife: stopLife,
 		o: o, store: NewStore(o.DB, o.Clock.Now), log: o.Log, clock: o.Clock, loc: o.Location,
 		pending: map[string]bool{}, wake: make(chan struct{}, 1),
 	}, nil
@@ -233,6 +248,7 @@ func (s *Service) Run(ctx context.Context) {
 
 // Stop ends the worker and waits for the fetch in flight.
 func (s *Service) Stop() {
+	s.stopLife()
 	if s.cancel == nil {
 		return
 	}

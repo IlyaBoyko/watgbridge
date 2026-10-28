@@ -126,6 +126,9 @@ func (s *Service) notAuthorized(ctx context.Context) {
 // fetch does one round. All sessions are scanned first; single sessions that
 // the scan did not cover follow.
 func (s *Service) fetch(ctx context.Context, p pendingSet) error {
+	// Not while a send is under way: see SendText.
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
 	meta, _, err := s.store.meta(s.clock.Now().UnixMilli())
 	if err != nil {
 		return err

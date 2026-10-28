@@ -208,8 +208,8 @@ func BridgeTelegramToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
 		return nil
 	}
 
-	// A Lazada buyer's topic is not answered through here yet, and never goes
-	// through WhatsApp.
+	// A Lazada buyer's topic is answered through the Lazada channel, and never
+	// goes through WhatsApp.
 	if lzcustomer.HandleTopicMessage(b, c) {
 		return nil
 	}
@@ -354,6 +354,11 @@ func BridgeTelegramToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
 // BridgeTelegramEditedToWhatsAppHandler handles edited Telegram messages and mirrors the edit to WhatsApp
 func BridgeTelegramEditedToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
 	if !utils.TgUpdateIsAuthorized(b, c) {
+		return nil
+	}
+
+	// Lazada cannot take an edit of a message it already delivered.
+	if lzcustomer.HandleTopicEdit(b, c) {
 		return nil
 	}
 

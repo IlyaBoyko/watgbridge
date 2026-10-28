@@ -224,6 +224,7 @@ func Init() (*Service, error) {
 		SafetyEvery:  time.Duration(lz.SafetyPollSeconds) * time.Second,
 		ActiveEvery:  time.Duration(lz.ActivePollSeconds) * time.Second,
 		BoldCustomer: cfg.Telegram.BoldCustomerMessages,
+		TextLimit:    lz.TextLimit,
 	})
 	if err != nil {
 		return nil, err
@@ -264,27 +265,64 @@ func HandleAuthCommand(b *gotgbot.Bot, c *ext.Context) bool {
 	return true
 }
 
-// HandleTopicMessage is the hook in the bridge's topic-to-WhatsApp handler. It
-// returns true when the topic belongs to a Lazada chat: the message then goes
-// nowhere, and the sender is told why. It does so whether or not the channel
-// is running, because a Lazada buyer's topic must never reach WhatsApp.
-func HandleTopicMessage(b *gotgbot.Bot, c *ext.Context) bool {
-	msg := c.EffectiveMessage
+// lazadaSessionOf returns the Lazada session whose topic msg was written in.
+func lazadaSessionOf(msg *gotgbot.Message) (string, bool) {
 	if msg == nil || msg.MessageThreadId == 0 {
-		return false
+		return "", false
 	}
 	key, err := database.ChatThreadGetWaFromTg(msg.Chat.Id, msg.MessageThreadId)
 	if err != nil {
-		return false
+		return "", false
 	}
-	if _, ok := agentlink.ParseLzChatKey(key); !ok {
+	return agentlink.ParseLzChatKey(key)
+}
+
+// perMessageTimeout bounds one staff message, all its parts included.
+const perMessageTimeout = 2 * time.Minute
+
+// HandleTopicMessage is the hook in the bridge's topic-to-WhatsApp handler. It
+// returns true when the topic belongs to a Lazada chat: the message then goes
+// to that buyer (text) or nowhere (anything else, with the sender told why),
+// and never to WhatsApp. It does so whether or not the channel is running,
+// because a Lazada buyer's topic must never reach WhatsApp.
+func HandleTopicMessage(b *gotgbot.Bot, c *ext.Context) bool {
+	msg := c.EffectiveMessage
+	session, ok := lazadaSessionOf(msg)
+	if !ok {
 		return false
 	}
 	if tgcustomer.IsServiceMessage(msg) {
 		return true
 	}
-	if _, err := utils.TgReplyTextByContext(b, c, SendingNotYet, nil, false); err != nil {
-		state.State.Logger.Warn("lazada: could not answer a topic message", zap.Error(err))
+
+	var out StaffOutcome
+	if s := current.Load(); s == nil {
+		out.Note = OffNote
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), perMessageTimeout)
+		defer cancel()
+		out = s.StaffToBuyer(ctx, msg, session)
+	}
+	if out.Note != "" {
+		if _, err := utils.TgReplyTextByContext(b, c, out.Note, nil, false); err != nil {
+			state.State.Logger.Warn("lazada: could not answer a topic message", zap.Error(err))
+		}
+	}
+	if out.Confirmed {
+		utils.SendMessageConfirmation(b, c, state.State.Config, msg, nil)
+	}
+	return true
+}
+
+// HandleTopicEdit is the hook in the bridge's edited-message handler. An edit
+// in a Lazada topic cannot change what the buyer already has, so the editor is
+// told that; nothing else happens. It returns true for such a topic.
+func HandleTopicEdit(b *gotgbot.Bot, c *ext.Context) bool {
+	if _, ok := lazadaSessionOf(c.EffectiveMessage); !ok {
+		return false
+	}
+	if _, err := utils.TgReplyTextByContext(b, c, EditNote, nil, false); err != nil {
+		state.State.Logger.Warn("lazada: could not answer an edit", zap.Error(err))
 	}
 	return true
 }

@@ -14,6 +14,8 @@ const lzConv = "lz:100094063_2_1011822749_1_103"
 type fakeLazada struct {
 	mu    sync.Mutex
 	polls []string
+	// send scripts SendText (see exec_lz_test.go); nil sends nothing.
+	send func(session, text, origin string) ([]string, error)
 }
 
 func (f *fakeLazada) Poll(sessionID string) {

@@ -365,15 +365,17 @@ type world struct {
 }
 
 type worldOpts struct {
-	api         func(API) API // wraps the API the service uses
-	auth        Authorizer    // replaces the real token source
-	unauth      bool          // no token is stored
-	safety      time.Duration
-	active      time.Duration
-	images      ImageFetcher
-	loc         *time.Location
-	boldBuyer   bool
-	callbackURL string
+	api           func(API) API // wraps the API the service uses
+	auth          Authorizer    // replaces the real token source
+	unauth        bool          // no token is stored
+	safety        time.Duration
+	active        time.Duration
+	images        ImageFetcher
+	loc           *time.Location
+	boldBuyer     bool
+	callbackURL   string
+	textLimit     int
+	pollAfterSend time.Duration
 }
 
 func newWorld(t *testing.T, mod ...func(*worldOpts)) *world {
@@ -429,6 +431,7 @@ func newWorld(t *testing.T, mod ...func(*worldOpts)) *world {
 		Images: imgs, Clock: clock, Log: zap.New(core),
 		AppKey: testKey, CallbackURL: cb, OwnerID: testOwner, Location: o.loc,
 		SafetyEvery: o.safety, ActiveEvery: o.active, BoldCustomer: o.boldBuyer,
+		TextLimit: o.textLimit, PollAfterSend: o.pollAfterSend,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -121,7 +121,10 @@ type Executor struct {
 	// Customer is the Telegram customer bot's channel. Nil when that bot is
 	// off, which makes every tg: conversation unknown.
 	Customer CustomerChannel
-	Bridge   Bridge
+	// Lazada is the Lazada IM channel. Nil when it is off, which makes every
+	// lz: conversation unknown.
+	Lazada LazadaChannel
+	Bridge Bridge
 	// MarkRead marks the unread messages of a WhatsApp chat read once a reply
 	// went out. Nil when telegram.send_my_read_receipts is off.
 	MarkRead func(chatKey string) error
@@ -262,10 +265,9 @@ func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 	if _, ok := ParseTgChatKey(p.Conversation); ok {
 		return e.sendReplyTelegram(ctx, p)
 	}
-	// Sending to Lazada is not wired yet; without this the key would be tried
-	// as a WhatsApp chat.
+	// Checked before the WhatsApp path: an lz: key is not a WhatsApp chat.
 	if _, ok := ParseLzChatKey(p.Conversation); ok {
-		return fail(ErrUnknownConversation)
+		return e.sendReplyLazada(ctx, p)
 	}
 	key, ok := e.chatFor(p.Conversation)
 	if !ok {

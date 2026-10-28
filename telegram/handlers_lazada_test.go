@@ -103,27 +103,47 @@ func (h *lzHub) handle(t *testing.T, text string, thread int64) {
 	}
 }
 
-// Until sending to Lazada exists, staff typing in a Lazada topic get a note,
-// and nothing is sent anywhere (least of all to WhatsApp).
-func TestLazadaTopicMessageGetsTheNoteAndGoesNowhere(t *testing.T) {
+// With the Lazada channel off, staff typing in a Lazada topic are told so, and
+// nothing is sent anywhere (least of all to WhatsApp). The channel's own paths
+// are tested in lzcustomer.
+func TestLazadaTopicMessageWithTheChannelOffGetsTheNoteAndGoesNowhere(t *testing.T) {
 	h := newLzHub(t)
 	h.handle(t, "Yes, in stock", 1300)
 
 	sent := h.Sent()
-	if len(sent) != 1 || sent[0] != "Sending to Lazada from the topic comes in the next update.|thread=1300" {
+	if len(sent) != 1 || sent[0] != "Lazada is turned off (lazada.enabled), so this was not sent to Lazada.|thread=1300" {
+		t.Errorf("messages the Hub bot sent = %q", sent)
+	}
+}
+
+// An edit in a Lazada topic is answered by the Lazada hook and never looked up
+// as a WhatsApp message (which would panic here: there is no WhatsApp client).
+func TestEditInALazadaTopicGetsTheEditNote(t *testing.T) {
+	h := newLzHub(t)
+	msg := &gotgbot.Message{
+		MessageId: 500, MessageThreadId: 1300, IsTopicMessage: true, Text: "fixed", EditDate: 99,
+		From: &gotgbot.User{Id: 704338780, FirstName: "Ilya"},
+		Chat: gotgbot.Chat{Id: -1001, Type: "supergroup"},
+	}
+	c := ext.NewContext(h.bot, &gotgbot.Update{UpdateId: 1, EditedMessage: msg}, nil)
+	if err := BridgeTelegramEditedToWhatsAppHandler(h.bot, c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	sent := h.Sent()
+	if len(sent) != 1 || sent[0] != "Edits can't be sent to Lazada; send a new message.|thread=1300" {
 		t.Errorf("messages the Hub bot sent = %q", sent)
 	}
 }
 
 // The /ai_ intercept runs before the Lazada hook: an /ai_ command in a Lazada
 // topic is the Agent's (here the link is off, so staff are told so), not the
-// "next update" note.
+// Lazada hook's note.
 func TestAICommandInALazadaTopicIsInterceptedFirst(t *testing.T) {
 	h := newLzHub(t)
 	h.handle(t, "/ai_status", 1300)
 
 	sent := h.Sent()
-	if len(sent) != 1 || !strings.HasPrefix(sent[0], "The agent isn't available here.") || strings.Contains(sent[0], "next update") {
+	if len(sent) != 1 || !strings.HasPrefix(sent[0], "The agent isn't available here.") || strings.Contains(sent[0], "turned off") {
 		t.Errorf("messages the Hub bot sent = %q", sent)
 	}
 }
