@@ -17,6 +17,7 @@ import (
 
 	"watgbridge/agentlink"
 	"watgbridge/database"
+	"watgbridge/lzcustomer"
 	"watgbridge/state"
 	"watgbridge/tgcustomer"
 	"watgbridge/utils"
@@ -195,9 +196,21 @@ func BridgeTelegramToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
 		return nil
 	}
 
+	// The owner's /lazada_auth holds a code; it goes no further than the Lazada
+	// channel, from any topic.
+	if lzcustomer.HandleAuthCommand(b, c) {
+		return nil
+	}
+
 	// A topic of a Telegram customer is answered through the customer bot,
 	// never through WhatsApp.
 	if tgcustomer.HandleTopicMessage(b, c) {
+		return nil
+	}
+
+	// A Lazada buyer's topic is not answered through here yet, and never goes
+	// through WhatsApp.
+	if lzcustomer.HandleTopicMessage(b, c) {
 		return nil
 	}
 
@@ -1076,7 +1089,7 @@ func SyncTopicNamesHandler(b *gotgbot.Bot, c *ext.Context) error {
 			tgThreadId = pair.TgThreadId
 		)
 
-		if waChatId == "status@broadcast" || waChatId == "calls" || waChatId == "mentions" || strings.HasPrefix(waChatId, "tg:") {
+		if waChatId == "status@broadcast" || waChatId == "calls" || waChatId == "mentions" || strings.HasPrefix(waChatId, "tg:") || strings.HasPrefix(waChatId, "lz:") {
 			continue
 		}
 		waChatJid, _ := utils.WaParseJID(waChatId)

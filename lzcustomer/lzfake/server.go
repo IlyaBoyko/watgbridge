@@ -80,6 +80,7 @@ type message struct {
 	processMsg    string
 	fromID, toID  string
 	fromTy, toTy  int
+	status        int // 1 = recalled
 }
 
 // Server is the fake. Create it with New and Close it when done.
@@ -599,7 +600,7 @@ func (s *Server) messageList(w http.ResponseWriter, p map[string]string) {
 			"from_account_id": m.fromID, "to_account_id": m.toID,
 			"template_id": strconv.Itoa(m.template), "type": strconv.Itoa(m.typ),
 			"content": m.content, "send_time": strconv.FormatInt(m.sendTime, 10),
-			"status": "0", "auto_reply": strconv.FormatBool(m.autoReply), "site_id": "MY",
+			"status": strconv.Itoa(m.status), "auto_reply": strconv.FormatBool(m.autoReply), "site_id": "MY",
 		}
 		if m.processMsg != "" {
 			e["process_msg"] = m.processMsg
@@ -652,4 +653,18 @@ func (s *Server) startStr(start int64) string {
 		start = s.now().UnixMilli()
 	}
 	return strconv.FormatInt(start, 10)
+}
+
+// RecallMessage marks a message as recalled (status 1), as when its sender
+// takes it back. It reports whether the message exists.
+func (s *Server) RecallMessage(sessionID, messageID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range s.messages[sessionID] {
+		if m.id == messageID {
+			m.status = 1
+			return true
+		}
+	}
+	return false
 }

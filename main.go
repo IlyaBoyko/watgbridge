@@ -11,6 +11,7 @@ import (
 
 	"watgbridge/agentlink"
 	"watgbridge/database"
+	"watgbridge/lzcustomer"
 	"watgbridge/modules"
 	"watgbridge/state"
 	"watgbridge/telegram"
@@ -221,7 +222,20 @@ func main() {
 		}
 		customerChannel = customerBot
 	}
-	if err := agentlink.Start(agentCtx, customerChannel); err != nil {
+	// The Lazada channel needs no login, so it is built here; a failure is a
+	// config or database problem and never stops WhatsApp or the staff group.
+	// It fetches only once the link exists (Run below), like the customer bot.
+	var lazada *lzcustomer.Service
+	var lazadaChannel agentlink.LazadaChannel
+	if cfg.Lazada.Enabled {
+		if lazada, err = lzcustomer.Init(); err != nil {
+			logger.Error("Lazada is not running", zap.Error(err))
+			lazada = nil
+		} else if lazada != nil {
+			lazadaChannel = lazada
+		}
+	}
+	if err := agentlink.Start(agentCtx, customerChannel, lazadaChannel); err != nil {
 		logger.Fatal("failed to start the agent link", zap.Error(err))
 	}
 
@@ -233,9 +247,13 @@ func main() {
 	if customerBot != nil {
 		customerBot.Run(agentCtx)
 	}
+	if lazada != nil {
+		lazada.Run(agentCtx)
+	}
 
 	if !cfg.Telegram.SkipSettingCommands {
 		menu := agentlink.WithMenuCommands(state.State.TelegramCommands, cfg.Agent.Enabled)
+		menu = agentlink.WithLazadaMenu(menu, lazada != nil)
 		err = utils.TgRegisterBotCommands(state.State.TelegramBot, menu...)
 		if err != nil {
 			logger.Error("failed to set my commands",
@@ -264,6 +282,9 @@ func main() {
 
 	if customerBot != nil {
 		customerBot.Stop()
+	}
+	if lazada != nil {
+		lazada.Stop()
 	}
 	stopAgent()
 	agentlink.Stop(5 * time.Second)

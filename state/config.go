@@ -118,6 +118,7 @@ type Config struct {
 		SafetyPollSeconds int    `yaml:"safety_poll_seconds"` // default 180
 		ActivePollSeconds int    `yaml:"active_poll_seconds"` // default 15; 0 = off (push working)
 		TextLimit         int    `yaml:"text_limit"`          // default 1000 characters (runes)
+		CallbackURL       string `yaml:"callback_url"`        // default https://clarusmolecular.com/; the app's redirect, used in the authorization link
 	} `yaml:"lazada"`
 }
 
@@ -181,6 +182,9 @@ func (cfg *Config) validateLazada() error {
 	if lz.SafetyPollSeconds <= 0 {
 		lz.SafetyPollSeconds = defaultLazadaSafetyPollSeconds
 	}
+	if lz.CallbackURL == "" {
+		lz.CallbackURL = defaultLazadaCallbackURL
+	}
 	if lz.TextLimit <= 0 {
 		lz.TextLimit = defaultLazadaTextLimit
 	}
@@ -227,6 +231,7 @@ const (
 	defaultLazadaSafetyPollSeconds = 180
 	defaultLazadaActivePollSeconds = 15
 	defaultLazadaTextLimit         = 1000
+	defaultLazadaCallbackURL       = "https://clarusmolecular.com/"
 )
 
 func (cfg *Config) SetDefaults() {
@@ -251,6 +256,7 @@ func (cfg *Config) SetDefaults() {
 	cfg.Lazada.SafetyPollSeconds = defaultLazadaSafetyPollSeconds
 	cfg.Lazada.ActivePollSeconds = defaultLazadaActivePollSeconds
 	cfg.Lazada.TextLimit = defaultLazadaTextLimit
+	cfg.Lazada.CallbackURL = defaultLazadaCallbackURL
 
 	cfg.Agent.OutboxMaxAgeDays = 0 // keep undelivered events until the Agent acknowledges them
 }

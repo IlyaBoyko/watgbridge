@@ -35,9 +35,13 @@ func OneToOneJID(s string, isSelf func(waTypes.JID) bool) (waTypes.JID, error) {
 
 // ConversationFor maps a chat_thread key (what the bridge stores for a chat)
 // to the protocol's conversation id. The "wa:" prefix exists only on the wire.
-// A Telegram customer's key (`tg:<user_id>`) is its own conversation id.
+// A Telegram customer's key (`tg:<user_id>`) and a Lazada session's
+// (`lz:<session_id>`) are their own conversation ids.
 func ConversationFor(chatKey string, isSelf func(waTypes.JID) bool) (string, error) {
 	if _, ok := ParseTgChatKey(chatKey); ok {
+		return chatKey, nil
+	}
+	if _, ok := ParseLzChatKey(chatKey); ok {
 		return chatKey, nil
 	}
 	jid, err := OneToOneJID(chatKey, isSelf)
@@ -95,4 +99,22 @@ func ParseTgChatKey(s string) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+/* ------------------------------------------------------------ lazada chats -- */
+
+const lzConvPrefix = "lz:"
+
+// LzChatKey is the chat_thread key (and the conversation id) of a Lazada IM
+// session. The session id is Lazada's and opaque to the Hub.
+func LzChatKey(sessionID string) string { return lzConvPrefix + sessionID }
+
+// ParseLzChatKey recognises "lz:<session_id>" and returns the session id,
+// which must not be empty.
+func ParseLzChatKey(s string) (sessionID string, ok bool) {
+	rest, ok := strings.CutPrefix(s, lzConvPrefix)
+	if !ok || rest == "" {
+		return "", false
+	}
+	return rest, true
 }

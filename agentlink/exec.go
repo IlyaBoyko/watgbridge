@@ -208,6 +208,11 @@ func (e *Executor) chatFor(conversation string) (string, bool) {
 	if _, ok := ParseTgChatKey(conversation); ok {
 		return conversation, true
 	}
+	// Likewise a Lazada session's, so notes and cards (which only touch the
+	// topic) work for it.
+	if _, ok := ParseLzChatKey(conversation); ok {
+		return conversation, true
+	}
 	key, err := ChatKeyFor(conversation, e.Bridge.IsSelf)
 	if err != nil {
 		return "", false
@@ -256,6 +261,11 @@ func decodeOutMedia(ms []Media) ([]OutMedia, bool) {
 func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 	if _, ok := ParseTgChatKey(p.Conversation); ok {
 		return e.sendReplyTelegram(ctx, p)
+	}
+	// Sending to Lazada is not wired yet; without this the key would be tried
+	// as a WhatsApp chat.
+	if _, ok := ParseLzChatKey(p.Conversation); ok {
+		return fail(ErrUnknownConversation)
 	}
 	key, ok := e.chatFor(p.Conversation)
 	if !ok {

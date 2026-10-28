@@ -25,8 +25,9 @@ var current atomic.Pointer[Hub]
 
 // Start builds the link from the bridge's config and runs it until ctx ends.
 // With `agent.enabled: false` it opens no connection and writes nothing.
-// customer is the Telegram customer bot, or nil when that bot is off.
-func Start(ctx context.Context, customer CustomerChannel) error {
+// customer is the Telegram customer bot, or nil when that bot is off; lazada is
+// the Lazada channel, or nil when it is off.
+func Start(ctx context.Context, customer CustomerChannel, lazada LazadaChannel) error {
 	cfg := state.State.Config
 	h, err := NewHub(Config{
 		Enabled:          cfg.Agent.Enabled,
@@ -39,6 +40,7 @@ func Start(ctx context.Context, customer CustomerChannel) error {
 		Bridge:     bridgeState{},
 		WA:         waSender{},
 		Customer:   customer,
+		Lazada:     lazada,
 		WAPresence: waPresence{},
 		TGPresence: typingOf(customer),
 		MarkRead:   readReceiptHook(cfg),

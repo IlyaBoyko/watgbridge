@@ -72,6 +72,7 @@ lazada:
   safety_poll_seconds: 180               # Fetch every session this often even if no push arrived. Pushes are not queued, so this bounds the delay when the Agent or the link is down
   active_poll_seconds: 15                # While a Lazada chat is active, also fetch this often. 0 = off: set it once pushes reach the Agent
   text_limit: 1000                       # Longest single message sent to Lazada, in characters. Longer replies are split
+  callback_url: https://clarusmolecular.com/  # The app's Callback URL in the Lazada console. The owner copies code= from the address bar after approving
 
 whatsapp:
   session_name: watgbridge        # This will appear in your Linked Devices in mobile app

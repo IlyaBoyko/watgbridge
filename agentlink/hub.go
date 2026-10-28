@@ -28,6 +28,9 @@ type Deps struct {
 	WA     WhatsAppSender
 	// Customer is the Telegram customer bot; nil when it is off.
 	Customer CustomerChannel
+	// Lazada is the Lazada IM channel; nil when it is off. When set, hello
+	// declares the `lz` channel and the `lz_poll` feature.
+	Lazada LazadaChannel
 	// MarkRead marks a WhatsApp chat's unread messages read after a reply to it
 	// was sent. Nil turns that off.
 	MarkRead   func(chatKey string) error
@@ -115,11 +118,20 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 		if d.Customer != nil {
 			opt.Channels = append(opt.Channels, "tg")
 		}
+		if d.Lazada != nil {
+			opt.Channels = append(opt.Channels, "lz")
+		}
 	}
 	opt.URL, opt.Token, opt.HubID, opt.HubVersion = cfg.URL, cfg.Token, cfg.HubID, d.HubVersion
 	opt.Presence = h.presence
 	if opt.Features == nil {
 		opt.Features = []string{FeaturePresence}
+		if d.Lazada != nil {
+			opt.Features = append(opt.Features, FeatureLzPoll)
+		}
+	}
+	if d.Lazada != nil {
+		opt.Lazada = d.Lazada
 	}
 	h.link = NewLink(opt, h.outbox, h.exec, d.Notifier, d.Clock, d.Log)
 	return h, nil

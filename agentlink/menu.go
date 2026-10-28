@@ -30,3 +30,22 @@ func WithMenuCommands(base []gotgbot.BotCommand, agentEnabled bool) []gotgbot.Bo
 	}
 	return out
 }
+
+// lazadaAuthCommand is the owner's way to connect Lazada chat. It is the
+// bridge's own command, not an /ai_ one, so it is kept apart from menuCommands:
+// the /ai_ interceptor does not take it.
+var lazadaAuthCommand = gotgbot.BotCommand{
+	Command: "lazada_auth", Description: "Owner: connect Lazada chat (/lazada_auth <code>)",
+}
+
+// WithLazadaMenu returns base followed by the /lazada_auth entry when the
+// Lazada channel is enabled, and base unchanged otherwise. base is never
+// modified. The menu is registered without a language code, so every language
+// sees the same English text.
+func WithLazadaMenu(base []gotgbot.BotCommand, lazadaEnabled bool) []gotgbot.BotCommand {
+	out := append([]gotgbot.BotCommand(nil), base...)
+	if lazadaEnabled {
+		out = append(out, lazadaAuthCommand)
+	}
+	return out
+}

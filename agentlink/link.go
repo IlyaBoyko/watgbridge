@@ -32,6 +32,9 @@ type LinkOptions struct {
 	Features []string
 	// Presence receives the validated `presence` frames. Nil drops them.
 	Presence PresenceSink
+	// Lazada receives `lz_poll` frames and a poll of every session after each
+	// successful handshake. Nil (the channel is off) ignores both.
+	Lazada LazadaChannel
 
 	PingInterval     time.Duration // protocol: 30 s
 	DeadAfter        time.Duration // protocol: 90 s of silence
@@ -278,6 +281,11 @@ func (l *Link) session(ctx context.Context) (welcomed bool, err error) {
 	defer cancel()
 	l.connected.Store(true)
 	defer l.connected.Store(false)
+	// Pushes are not queued, so whatever arrived while the link was down is
+	// found by fetching every session now.
+	if l.opt.Lazada != nil {
+		l.opt.Lazada.Poll("")
+	}
 
 	errs := make(chan error, 3)
 	var wg sync.WaitGroup
@@ -442,6 +450,20 @@ func (l *Link) handleFrame(data []byte) {
 		default:
 			l.log.Debug("agent link: presence queue full, dropped a frame")
 		}
+
+	case TypeLzPoll:
+		// Not a command either: no result, no id memory. The channel's own
+		// goroutine does the fetching; this only wakes it.
+		p, err := DecodePayload(env)
+		if err != nil {
+			l.queueError(env.ID, "schema", err.Error())
+			return
+		}
+		if l.opt.Lazada == nil {
+			l.log.Debug("agent link: lz_poll ignored, the Lazada channel is off")
+			return
+		}
+		l.opt.Lazada.Poll(p.(*LzPoll).SessionID)
 
 	case TypeError:
 		var pe ProtocolError

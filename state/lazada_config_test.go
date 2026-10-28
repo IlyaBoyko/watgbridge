@@ -123,3 +123,30 @@ func TestSampleConfigDocumentsLazadaAsOff(t *testing.T) {
 		t.Errorf("sample config fails validation: %v", err)
 	}
 }
+
+func TestLazadaCallbackURL(t *testing.T) {
+	var cfg Config
+	cfg.SetDefaults()
+	if cfg.Lazada.CallbackURL != "https://clarusmolecular.com/" {
+		t.Errorf("default = %q", cfg.Lazada.CallbackURL)
+	}
+
+	// A config without the key keeps the default; a blank one is refilled.
+	for name, body := range map[string]string{"absent": "time_zone: UTC\n", "blank": "lazada:\n  callback_url: \"\"\n"} {
+		c := writeConfig(t, body)
+		if err := c.LoadConfig(); err != nil {
+			t.Fatal(err)
+		}
+		if c.Lazada.CallbackURL != "https://clarusmolecular.com/" {
+			t.Errorf("%s: callback_url = %q", name, c.Lazada.CallbackURL)
+		}
+	}
+
+	c := writeConfig(t, "lazada:\n  callback_url: https://example.com/auth\n")
+	if err := c.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if c.Lazada.CallbackURL != "https://example.com/auth" {
+		t.Errorf("callback_url = %q", c.Lazada.CallbackURL)
+	}
+}
