@@ -18,6 +18,9 @@ const (
 	expiryWarningWindow = 14 * 24 * time.Hour
 	authTimeout         = 30 * time.Second
 	dateFormat          = "2006-01-02"
+	// timeFormat is what the messages show: the token lapses at a moment, and "today"
+	// is not enough to know whether it is before or after tomorrow's work starts.
+	timeFormat = "2006-01-02 15:04 MST"
 )
 
 // ParseAuthCommand recognises "/lazada_auth" (also "/lazada_auth@bot") at the
@@ -128,7 +131,7 @@ func (s *Service) date(t time.Time) string {
 	if t.IsZero() {
 		return "(unknown)"
 	}
-	return t.In(s.loc).Format(dateFormat)
+	return t.In(s.loc).Format(timeFormat)
 }
 
 // checkExpiry posts, once per local day, that the refresh token lapses soon.

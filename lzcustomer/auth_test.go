@@ -116,7 +116,7 @@ func TestGoodCodeDeletesTheMessageThenAuthorizesRepliesAndFetches(t *testing.T) 
 	want := []string{
 		"delete:77",
 		"authorize",
-		"post:1300:text:Lazada authorized: seller 100094063 (MY), account shop@example.com. Token valid until 2026-11-05; re-authorize by 2026-11-28. Put seller_id 100094063 in the agent config (markets.my.lazada.sellerId).",
+		"post:1300:text:Lazada authorized: seller 100094063 (MY), account shop@example.com. Token valid until 2026-11-05 04:00 +08; re-authorize by 2026-11-28 06:00 +08. Put seller_id 100094063 in the agent config (markets.my.lazada.sellerId).",
 	}
 	if got := w.j.all(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("journal =\n%q\nwant\n%q", got, want)
@@ -226,7 +226,7 @@ func TestExpiryWarningFiresOncePerDayWithinFourteenDays(t *testing.T) {
 		t.Fatalf("%d warnings on one day, want 1", n)
 	}
 	p := w.topics.Posts()[0]
-	want := "Lazada authorization expires on 2026-11-07. Re-authorize: " + wantLink + ", then /lazada_auth <code>."
+	want := "Lazada authorization expires on 2026-11-07 10:00 UTC. Re-authorize: " + wantLink + ", then /lazada_auth <code>."
 	if p.Thread != 0 || p.Text != want {
 		t.Errorf("warning = thread %d %q, want %q", p.Thread, p.Text, want)
 	}
