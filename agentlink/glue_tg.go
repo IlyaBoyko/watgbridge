@@ -135,3 +135,56 @@ func typingOf(c CustomerChannel) TGPresence {
 	t, _ := c.(TGPresence)
 	return t
 }
+
+// replyParams quotes a message of the group, and still posts when that message
+// has been deleted since.
+func replyParams(msgID int64) *gotgbot.ReplyParameters {
+	return &gotgbot.ReplyParameters{MessageId: msgID, AllowSendingWithoutReply: true}
+}
+
+func (topicPoster) PostTextReply(_ context.Context, threadID, replyTo int64, text TopicText) (int64, error) {
+	b, err := tgBot()
+	if err != nil {
+		return 0, err
+	}
+	msg, err := b.SendMessage(state.State.Config.Telegram.TargetChatID, htmlOf(text),
+		&gotgbot.SendMessageOpts{MessageThreadId: threadID, ParseMode: "HTML", ReplyParameters: replyParams(replyTo)})
+	if err != nil {
+		return 0, err
+	}
+	return msg.MessageId, nil
+}
+
+func (topicPoster) PostCardReply(_ context.Context, threadID, replyTo int64, text TopicText, kb Keyboard) (int64, int64, error) {
+	b, err := tgBot()
+	if err != nil {
+		return 0, 0, err
+	}
+	opts := &gotgbot.SendMessageOpts{MessageThreadId: threadID, ParseMode: "HTML", ReplyParameters: replyParams(replyTo)}
+	if len(kb) > 0 {
+		opts.ReplyMarkup = inlineMarkup(kb)
+	}
+	chat := state.State.Config.Telegram.TargetChatID
+	msg, err := b.SendMessage(chat, htmlOf(text), opts)
+	if err != nil {
+		return 0, 0, err
+	}
+	return chat, msg.MessageId, nil
+}
+
+// EditPost leaves the post's keyboard alone: it only edits posts without one
+// (RecordTopicPost never stores a post that has one).
+func (topicPoster) EditPost(_ context.Context, chatID, msgID int64, text TopicText, caption bool) error {
+	b, err := tgBot()
+	if err != nil {
+		return err
+	}
+	if caption {
+		_, _, err = b.EditMessageCaption(&gotgbot.EditMessageCaptionOpts{
+			ChatId: chatID, MessageId: msgID, Caption: htmlOf(text), ParseMode: "HTML",
+		})
+		return err
+	}
+	_, _, err = b.EditMessageText(htmlOf(text), &gotgbot.EditMessageTextOpts{ChatId: chatID, MessageId: msgID, ParseMode: "HTML"})
+	return err
+}

@@ -64,7 +64,7 @@ func (e *Executor) sendReplyLazada(ctx context.Context, p *Send) Result {
 	if errors.As(sendErr, &partial) {
 		sent = partial.SentText
 	}
-	mirrored := e.mirrorLazada(ctx, thread, sent, p.Signature)
+	mirrored := e.mirrorLazada(ctx, thread, sent, p)
 
 	if sendErr != nil {
 		e.noteLazadaPartial(ctx, thread, len(ids), partial, sendErr)
@@ -79,9 +79,11 @@ func (e *Executor) sendReplyLazada(ctx context.Context, p *Send) Result {
 // does: the robot prefix, then the signature on a line of its own. A failure is
 // logged and nothing more, since the buyer already has the message. It reports
 // whether the mirror is in the topic.
-func (e *Executor) mirrorLazada(ctx context.Context, thread int64, text, signature string) bool {
-	post, _ := renderMirror(mirrorParts{Text: text, Signature: signature}, tgTextLimit)
-	if _, err := e.Topics.PostText(ctx, thread, post); err != nil {
+func (e *Executor) mirrorLazada(ctx context.Context, thread int64, text string, p *Send) bool {
+	parts := mirrorParts{Text: text, Signature: p.Signature}
+	decorateMirror(p, &parts, true)
+	post, _ := renderMirror(parts, tgTextLimit)
+	if _, err := e.postText(ctx, thread, parts.ReplyTo, post); err != nil {
 		e.Log.Error("agent link: could not mirror the Lazada reply into the topic", zap.Error(err))
 		return false
 	}

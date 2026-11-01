@@ -201,16 +201,16 @@ func (s *Service) handle(ctx context.Context, sc *sessionState, m Message) error
 	alreadyPosted := sc.cursor.PostedMessageID == id
 
 	post := func(p TopicPost) error {
-		if alreadyPosted {
-			return nil
-		}
-		thread, err := s.topicFor(ctx, sc)
-		if err != nil {
-			return err
-		}
-		_, err = s.o.Topics.Post(ctx, thread, p)
-		if err != nil {
-			s.log.Warn("lazada: could not post into the topic", zap.String("kind", p.Kind), zap.Error(err))
+		_, err := s.postOnce(ctx, sc, alreadyPosted, p)
+		return err
+	}
+	// postRec is post for the message itself, which the Agent may later annotate.
+	postRec := func(p TopicPost) error {
+		msgID, err := s.postOnce(ctx, sc, alreadyPosted, p)
+		if err == nil && msgID != 0 {
+			if rerr := s.store.RecordTopicMsg(sc.id, id, msgID); rerr != nil {
+				s.log.Warn("lazada: could not remember the topic post of a message", zap.Error(rerr))
+			}
 		}
 		return err
 	}
@@ -244,7 +244,7 @@ func (s *Service) handle(ctx context.Context, sc *sessionState, m Message) error
 			return s.advance(sc, m, true)
 		}
 		r := s.render(ctx, m, true)
-		s.postRendered(post, "", r, s.o.BoldCustomer)
+		s.postRendered(postRec, "", r, s.o.BoldCustomer)
 		if err := s.markPosted(sc, m); err != nil {
 			return err
 		}
@@ -258,7 +258,7 @@ func (s *Service) handle(ctx context.Context, sc *sessionState, m Message) error
 		return s.advance(sc, m, true)
 
 	case int64(m.FromAccountType) == AccountSeller:
-		return s.handleSeller(ctx, sc, m, post, note, needTopic)
+		return s.handleSeller(ctx, sc, m, post, postRec, note, needTopic)
 	}
 
 	s.log.Debug("lazada: message from an unknown account type skipped", zap.String("message_id", id))
@@ -280,7 +280,7 @@ func (s *Service) postRendered(post func(TopicPost) error, prefix string, r rend
 }
 
 func (s *Service) handleSeller(ctx context.Context, sc *sessionState, m Message,
-	post func(TopicPost) error, note func(string), needTopic func() error) error {
+	post, postRec func(TopicPost) error, note func(string), needTopic func() error) error {
 	id := string(m.MessageID)
 	warn := func() {
 		if m.ProcessMsg != "" {
@@ -319,7 +319,7 @@ func (s *Service) handleSeller(ctx context.Context, sc *sessionState, m Message,
 	// Staff answered from Seller Center or the seller app: the same case as a
 	// reply typed on the WhatsApp phone.
 	r := s.render(ctx, m, true)
-	s.postRendered(post, sellerMirrorPrefix, r, false)
+	s.postRendered(postRec, sellerMirrorPrefix, r, false)
 	warn()
 	if err := s.markPosted(sc, m); err != nil {
 		return err
@@ -339,4 +339,31 @@ func (s *Service) handleSeller(ctx context.Context, sc *sessionState, m Message,
 func (s *Service) markPosted(sc *sessionState, m Message) error {
 	sc.cursor.PostedMessageID = string(m.MessageID)
 	return s.store.saveCursor(sc.cursor)
+}
+
+// postOnce makes one topic post, unless the message's posts were already made
+// on an earlier attempt (alreadyPosted). It returns the post's message id.
+func (s *Service) postOnce(ctx context.Context, sc *sessionState, alreadyPosted bool, p TopicPost) (int64, error) {
+	if alreadyPosted {
+		return 0, nil
+	}
+	thread, err := s.topicFor(ctx, sc)
+	if err != nil {
+		return 0, err
+	}
+	msgID, err := s.o.Topics.Post(ctx, thread, p)
+	if err != nil {
+		s.log.Warn("lazada: could not post into the topic", zap.String("kind", p.Kind), zap.Error(err))
+	}
+	return msgID, err
+}
+
+// TopicMsgOf is agentlink.TopicFinder: the topic post that shows a buyer's (or
+// phone-sent seller) message of a session.
+func (s *Service) TopicMsgOf(conversation, hubMsgID string) (int64, bool, error) {
+	session, ok := agentlink.ParseLzChatKey(conversation)
+	if !ok {
+		return 0, false, nil
+	}
+	return s.store.TopicMsgFor(session, hubMsgID)
 }

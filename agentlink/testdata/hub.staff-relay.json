@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "id": "wa-5f0c9a1e2b3d4c5e6f7a8b9c0d",
+  "type": "staff.relay",
+  "ts": "2026-11-01T09:31:02.120Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "topic_id": "1234",
+    "relay_id": "-1001234567890:5521",
+    "author": {
+      "source": "topic",
+      "tg_user_id": "704338780",
+      "name": "Ilya"
+    },
+    "text": "Yes, we ship to Penang. Usually 2-3 working days, RM 10 shipping.",
+    "reply_to": "3EB0A1B2C3D4E5F6"
+  }
+}

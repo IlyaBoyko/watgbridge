@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000T2",
+  "type": "annotate",
+  "ts": "2026-11-01T09:30:25.000Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "hub_msg_id": "3EB0A1B2C3D4E5F6",
+    "text": "Can you ship to Penang? How many days?",
+    "expires_at": "2026-11-01T09:40:25.000Z"
+  }
+}

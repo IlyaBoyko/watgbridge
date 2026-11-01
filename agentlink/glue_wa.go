@@ -173,6 +173,14 @@ func (bridgeState) RecordPair(waMsgID, chatKey string, tgMsgID, threadID int64) 
 		state.State.Config.Telegram.TargetChatID, tgMsgID, threadID)
 }
 
+func (bridgeState) TopicMsgOf(waMsgID, chatKey string) (int64, int64, bool, error) {
+	_, thread, msgID, err := database.MsgIdGetTgFromWa(waMsgID, chatKey)
+	if err != nil || msgID == 0 {
+		return 0, 0, false, err
+	}
+	return msgID, thread, true, nil
+}
+
 func (bridgeState) PairIDsFor(tgMsgID, tgThreadID int64, waChat string) ([]string, error) {
 	var pairs []database.MsgIdPair
 	err := state.State.Database.

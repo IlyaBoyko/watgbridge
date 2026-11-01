@@ -5,6 +5,7 @@ import (
 	"html"
 	"time"
 
+	"watgbridge/agentlink"
 	"watgbridge/database"
 	"watgbridge/state"
 	"watgbridge/utils"
@@ -43,6 +44,8 @@ func (bc *bridgeContext) savePair(sentMsg *gotgbot.Message) {
 			bc.cfg.Telegram.TargetChatID,
 			sentMsg.MessageId, sentMsg.MessageThreadId,
 		)
+		// So the support Agent can add its English line to this post (no-op when the link is off).
+		agentlink.RecordTopicPost(sentMsg)
 	}
 }
 

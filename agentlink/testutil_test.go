@@ -116,10 +116,11 @@ func (f *fakeWA) Calls() []waCall {
 }
 
 type topicPost struct {
-	Thread int64
-	Text   string // text, or the caption of a media post
-	HTML   bool   // Text is ready-made Telegram HTML
-	Media  *OutMedia
+	Thread  int64
+	ReplyTo int64  // the topic message it answers; 0 for none
+	Text    string // text, or the caption of a media post
+	HTML    bool   // Text is ready-made Telegram HTML
+	Media   *OutMedia
 }
 
 type fakeTopics struct {
@@ -136,6 +137,11 @@ type fakeTopics struct {
 	// deleted lists deleted messages as {chat, message}; deleteFail fails the delete.
 	deleted    [][2]int64
 	deleteFail error
+	// replyGone makes PostTextReply and PostCardReply fail as Telegram does for a
+	// deleted message; editPostFail fails EditPost.
+	replyGone    bool
+	editPostFail error
+	postEdits    []postEdit
 }
 
 func (f *fakeTopics) PostText(_ context.Context, thread int64, text TopicText) (int64, error) {
@@ -171,10 +177,11 @@ func (f *fakeTopics) PostMedia(_ context.Context, thread int64, m OutMedia) (int
 }
 
 type cardPost struct {
-	Thread int64
-	Text   string
-	HTML   bool
-	KB     Keyboard
+	Thread  int64
+	ReplyTo int64
+	Text    string
+	HTML    bool
+	KB      Keyboard
 }
 
 type cardEdit struct {
@@ -250,6 +257,7 @@ type fakeBridge struct {
 	participants map[string]string
 	pairs        []pairRecord
 	fwd          []forwarded
+	topicMsgs    map[string][2]int64
 	selfUser     string
 }
 
@@ -343,13 +351,14 @@ type world struct {
 	notifier *fakeNotifier
 	customer *fakeCustomer
 	log      *zap.Logger
+	timers   *fakeTimers
 }
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	return &world{
 		t: t, db: newTestDB(t), clock: newFakeClock(), wa: &fakeWA{}, topics: &fakeTopics{},
-		bridge: newFakeBridge(), notifier: &fakeNotifier{}, customer: &fakeCustomer{targets: map[[2]int64]string{}}, log: zap.NewNop(),
+		bridge: newFakeBridge(), notifier: &fakeNotifier{}, customer: &fakeCustomer{targets: map[[2]int64]string{}}, log: zap.NewNop(), timers: &fakeTimers{},
 	}
 }
 
@@ -357,6 +366,7 @@ func (w *world) deps() Deps {
 	return Deps{
 		DB: w.db, Bridge: w.bridge, WA: w.wa, Customer: w.customer, Topics: w.topics, Notifier: w.notifier,
 		Clock: w.clock, Log: w.log, HubVersion: "test",
+		AfterFunc: w.timers.After,
 		Link: LinkOptions{
 			PingInterval: 50 * time.Millisecond, DeadAfter: 2 * time.Second, HandshakeTimeout: 2 * time.Second,
 			BackoffMin: 10 * time.Millisecond, BackoffMax: 40 * time.Millisecond,
@@ -380,6 +390,7 @@ func (w *world) executor() *Executor {
 	return &Executor{
 		WA: w.wa, Topics: w.topics, Customer: w.customer, Bridge: w.bridge, Memory: NewCommandMemory(w.db, w.clock),
 		Cards: NewCardStore(w.db, w.clock), Clock: w.clock, Guard: NewSentGuard(w.clock), Log: w.log,
+		Relay: NewRelayKit(w.db, w.clock, w.log, w.timers.After, 0),
 	}
 }
 
@@ -602,4 +613,137 @@ func (f *fakeCustomer) Pairs() []custPair {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]custPair(nil), f.pairs...)
+}
+
+/* --------------------------------------------- translation (section 5f) -- */
+
+type postEdit struct {
+	ChatID, MsgID int64
+	Text          string
+	HTML, Caption bool
+}
+
+func (f *fakeTopics) PostTextReply(_ context.Context, thread, replyTo int64, text TopicText) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail != nil {
+		return 0, f.fail
+	}
+	if f.replyGone {
+		return 0, errors.New("Bad Request: message to be replied not found")
+	}
+	f.posts = append(f.posts, topicPost{Thread: thread, ReplyTo: replyTo, Text: text.Text, HTML: text.HTML})
+	f.seq++
+	return 9000 + f.seq, nil
+}
+
+func (f *fakeTopics) PostCardReply(_ context.Context, thread, replyTo int64, text TopicText, kb Keyboard) (int64, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail != nil {
+		return 0, 0, f.fail
+	}
+	if f.replyGone {
+		return 0, 0, errors.New("Bad Request: message to be replied not found")
+	}
+	f.cards = append(f.cards, cardPost{Thread: thread, ReplyTo: replyTo, Text: text.Text, HTML: text.HTML, KB: kb})
+	f.seq++
+	return -1001, 9000 + f.seq, nil
+}
+
+func (f *fakeTopics) EditPost(_ context.Context, chatID, msgID int64, text TopicText, caption bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.editPostFail != nil {
+		return f.editPostFail
+	}
+	f.postEdits = append(f.postEdits, postEdit{ChatID: chatID, MsgID: msgID, Text: text.Text, HTML: text.HTML, Caption: caption})
+	return nil
+}
+
+func (f *fakeTopics) PostEdits() []postEdit {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]postEdit(nil), f.postEdits...)
+}
+
+// TopicMsgOf answers from topicMsgs, keyed by WhatsApp message id.
+func (b *fakeBridge) TopicMsgOf(waMsgID, _ string) (int64, int64, bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	p, ok := b.topicMsgs[waMsgID]
+	return p[0], p[1], ok, nil
+}
+
+func (b *fakeBridge) setTopicMsg(waMsgID string, tgMsgID, thread int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.topicMsgs == nil {
+		b.topicMsgs = map[string][2]int64{}
+	}
+	b.topicMsgs[waMsgID] = [2]int64{tgMsgID, thread}
+}
+
+// fakeTimers stands in for time.AfterFunc: nothing fires until Fire is called.
+type fakeTimers struct {
+	mu     sync.Mutex
+	timers []*fakeTimer
+}
+
+type fakeTimer struct {
+	d       time.Duration
+	f       func()
+	stopped bool
+}
+
+func (ft *fakeTimers) After(d time.Duration, f func()) func() bool {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	t := &fakeTimer{d: d, f: f}
+	ft.timers = append(ft.timers, t)
+	return func() bool {
+		ft.mu.Lock()
+		defer ft.mu.Unlock()
+		was := !t.stopped
+		t.stopped = true
+		return was
+	}
+}
+
+// Fire runs every timer that is still live and returns how many ran.
+func (ft *fakeTimers) Fire() int {
+	ft.mu.Lock()
+	var run []func()
+	for _, t := range ft.timers {
+		if !t.stopped {
+			t.stopped = true
+			run = append(run, t.f)
+		}
+	}
+	ft.mu.Unlock()
+	for _, f := range run {
+		f()
+	}
+	return len(run)
+}
+
+// Live is how many timers are still waiting.
+func (ft *fakeTimers) Live() int {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	n := 0
+	for _, t := range ft.timers {
+		if !t.stopped {
+			n++
+		}
+	}
+	return n
+}
+
+// topicFinderCustomer / topicFinderLazada add the optional TopicFinder side.
+type finderMap map[string]int64
+
+func (m finderMap) TopicMsgOf(conversation, hubMsgID string) (int64, bool, error) {
+	id, ok := m[conversation+"|"+hubMsgID]
+	return id, ok, nil
 }

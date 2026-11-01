@@ -426,7 +426,7 @@ func (l *Link) handleFrame(data []byte) {
 			l.log.Error("agent link: could not delete acked event", zap.Error(err))
 		}
 
-	case TypeSend, TypeEditCard:
+	case TypeSend, TypeEditCard, TypeAnnotate, TypeSetRelay:
 		if _, err := DecodePayload(env); err != nil {
 			// The executor also answers this command with result "invalid".
 			l.queueError(env.ID, "schema", err.Error())

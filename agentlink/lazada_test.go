@@ -226,9 +226,9 @@ func TestHelloDeclaresLazadaOnlyWhenTheChannelIsOn(t *testing.T) {
 		}
 		startLink(t, lazadaHub(t, w, a.URL(), lz))
 		hp := <-got
-		wantCh, wantFeat := []string{"wa", "tg"}, []string{"presence"}
+		wantCh, wantFeat := []string{"wa", "tg"}, []string{"presence", "translation"}
 		if on {
-			wantCh, wantFeat = []string{"wa", "tg", "lz"}, []string{"presence", "lz_poll"}
+			wantCh, wantFeat = []string{"wa", "tg", "lz"}, []string{"presence", "lz_poll", "translation"}
 		}
 		if !reflect.DeepEqual(hp.Channels, wantCh) || !reflect.DeepEqual(hp.Features, wantFeat) {
 			t.Errorf("lazada on=%v: channels %v features %v, want %v %v", on, hp.Channels, hp.Features, wantCh, wantFeat)
@@ -344,7 +344,7 @@ func TestLazadaMenuEntryOnlyWhenEnabled(t *testing.T) {
 	if _, _, ok := ParseAICommand("/lazada_auth abc"); ok {
 		t.Error("/lazada_auth was taken for an /ai_ command")
 	}
-	if len(base) != 2 || len(MenuCommands()) != 8 {
+	if len(base) != 2 || len(MenuCommands()) != 9 {
 		t.Error("the base list or the agent menu was changed")
 	}
 }

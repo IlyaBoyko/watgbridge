@@ -283,6 +283,7 @@ func (hubTopics) Post(ctx context.Context, thread int64, p TopicPost) (int64, er
 	if err != nil {
 		return 0, err
 	}
+	agentlink.RecordTopicPost(msg)
 	return msg.MessageId, nil
 }
 

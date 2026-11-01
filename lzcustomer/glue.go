@@ -163,6 +163,7 @@ func (hubTopics) Post(ctx context.Context, thread int64, p TopicPost) (int64, er
 	if err != nil {
 		return 0, err
 	}
+	agentlink.RecordTopicPost(msg)
 	return msg.MessageId, nil
 }
 
@@ -320,6 +321,11 @@ func HandleTopicMessage(b *gotgbot.Bot, c *ext.Context) bool {
 func HandleTopicEdit(b *gotgbot.Bot, c *ext.Context) bool {
 	if _, ok := lazadaSessionOf(c.EffectiveMessage); !ok {
 		return false
+	}
+	// A staff post the translation relay took over was never sent as written, so
+	// there is nothing to say about its edit.
+	if m := c.EffectiveMessage; agentlink.IsRelayedPost(m.Chat.Id, m.MessageId) {
+		return true
 	}
 	if _, err := utils.TgReplyTextByContext(b, c, EditNote, nil, false); err != nil {
 		state.State.Logger.Warn("lazada: could not answer an edit", zap.Error(err))

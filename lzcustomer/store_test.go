@@ -78,3 +78,22 @@ func TestSentRowsAreUniquePerMessageAndPrunedAfterThirtyDays(t *testing.T) {
 		t.Error("an old row was kept")
 	}
 }
+
+// annotate finds a Lazada message's topic post through this table: the first
+// post of a message wins, and an unknown message is simply not found.
+func TestTopicMsgRowsKeepTheFirstPostOfAMessage(t *testing.T) {
+	db := newTestDB(t)
+	mustNoErr(t, Migrate(db))
+	st := NewStore(db, nil)
+	mustNoErr(t, st.RecordTopicMsg("s1", "m1", 501))
+	mustNoErr(t, st.RecordTopicMsg("s1", "m1", 502)) // a later warning post
+	if id, ok, err := st.TopicMsgFor("s1", "m1"); err != nil || !ok || id != 501 {
+		t.Errorf("TopicMsgFor = %d, %v, %v", id, ok, err)
+	}
+	if _, ok, _ := st.TopicMsgFor("s1", "nope"); ok {
+		t.Error("an unknown message was found")
+	}
+	if _, ok, _ := st.TopicMsgFor("s2", "m1"); ok {
+		t.Error("another session's message was found")
+	}
+}

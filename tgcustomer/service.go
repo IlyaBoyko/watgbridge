@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -241,4 +243,21 @@ func HandleTopicMessage(b *gotgbot.Bot, c *ext.Context) bool {
 // SendTyping is agentlink.TGPresence.
 func (s *Service) SendTyping(ctx context.Context, chatID int64) error {
 	return s.cb.SendTyping(ctx, chatID)
+}
+
+// TopicMsgOf is agentlink.TopicFinder: the topic post that mirrors a message of
+// this customer's chat, named by its hub_msg_id (`<chat>:<message>`).
+func (s *Service) TopicMsgOf(conversation, hubMsgID string) (int64, bool, error) {
+	userID, ok := agentlink.ParseTgChatKey(conversation)
+	if !ok {
+		return 0, false, nil
+	}
+	chat, id, ok := strings.Cut(hubMsgID, ":")
+	chatID, err1 := strconv.ParseInt(chat, 10, 64)
+	msgID, err2 := strconv.ParseInt(id, 10, 64)
+	if !ok || err1 != nil || err2 != nil || chatID != userID {
+		return 0, false, nil
+	}
+	_, topicMsg, found, err := s.pairs.TopicMsgFor(chatID, msgID)
+	return topicMsg, found, err
 }

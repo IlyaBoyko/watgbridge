@@ -13,8 +13,8 @@ var telegramCommandName = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
 // H5: the entries must be accepted by Telegram's setMyCommands.
 func TestMenuCommandsAreValidForTelegram(t *testing.T) {
 	cmds := MenuCommands()
-	if len(cmds) != 8 {
-		t.Fatalf("want 8 agent commands, got %d", len(cmds))
+	if len(cmds) != 9 {
+		t.Fatalf("want 9 agent commands, got %d", len(cmds))
 	}
 	seen := map[string]bool{}
 	for _, c := range cmds {

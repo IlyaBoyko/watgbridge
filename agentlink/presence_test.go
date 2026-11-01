@@ -484,7 +484,7 @@ func TestHubDeclaresPresenceInHello(t *testing.T) {
 	startLink(t, h)
 	select {
 	case hp := <-got:
-		if !reflect.DeepEqual(hp.Features, []string{"presence"}) {
+		if !reflect.DeepEqual(hp.Features, []string{"presence", "translation"}) {
 			t.Errorf("hello features = %v", hp.Features)
 		}
 	case <-time.After(5 * time.Second):

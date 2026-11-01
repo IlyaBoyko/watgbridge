@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -31,6 +32,9 @@ const (
 	TypeAck             = "ack"
 	TypePresence        = "presence"
 	TypeLzPoll          = "lz_poll"
+	TypeAnnotate        = "annotate"
+	TypeSetRelay        = "set_relay"
+	TypeStaffRelay      = "staff.relay"
 )
 
 // Close codes (protocol §8).
@@ -122,6 +126,10 @@ type Hello struct {
 // FeaturePresence says the Hub handles `presence` (protocol section 5d).
 const FeaturePresence = "presence"
 
+// FeatureTranslation says the Hub handles `translation`, `annotate`,
+// `set_relay` and `relay_of`, and emits `staff.relay` (protocol section 5f).
+const FeatureTranslation = "translation"
+
 // FeatureLzPoll says the Hub runs the Lazada channel and handles `lz_poll`
 // (protocol section 5e).
 const FeatureLzPoll = "lz_poll"
@@ -210,8 +218,12 @@ type Send struct {
 	Title        string `json:"title,omitempty"`
 	// Format "html" says Text is Telegram HTML, escaped by the Agent (protocol
 	// section 5c). Empty is plain text. Only a tg: reply looks at it.
-	Format    string `json:"format,omitempty"`
-	ExpiresAt string `json:"expires_at"`
+	Format string `json:"format,omitempty"`
+	// Translation is the English version of Text, for the topic only; RelayOf
+	// is the staff.relay this reply answers (protocol section 5f).
+	Translation string `json:"translation,omitempty"`
+	RelayOf     string `json:"relay_of,omitempty"`
+	ExpiresAt   string `json:"expires_at"`
 }
 
 // FormatHTML is the one value of Send.Format.
@@ -222,8 +234,36 @@ type EditCard struct {
 	CardID       string   `json:"card_id"`
 	Text         string   `json:"text"`
 	Title        string   `json:"title,omitempty"`
+	Translation  string   `json:"translation,omitempty"`
 	Buttons      *Buttons `json:"buttons,omitempty"`
 	ExpiresAt    string   `json:"expires_at"`
+}
+
+// Annotate attaches an English text to the topic post of an existing message
+// (protocol section 5f).
+type Annotate struct {
+	Conversation string `json:"conversation"`
+	HubMsgID     string `json:"hub_msg_id"`
+	Text         string `json:"text"`
+	ExpiresAt    string `json:"expires_at"`
+}
+
+// SetRelay turns the staff relay on or off for one conversation (section 5f).
+type SetRelay struct {
+	Conversation string `json:"conversation"`
+	On           bool   `json:"on"`
+	ExpiresAt    string `json:"expires_at"`
+}
+
+// StaffRelay is staff text the Hub held back for the Agent to translate and
+// send (section 5f). RelayID is `<chat_id>:<message_id>` of the staff post.
+type StaffRelay struct {
+	Conversation string      `json:"conversation"`
+	TopicID      string      `json:"topic_id"`
+	RelayID      string      `json:"relay_id"`
+	Author       StaffAuthor `json:"author"`
+	Text         string      `json:"text"`
+	ReplyTo      string      `json:"reply_to,omitempty"`
 }
 
 // Presence is "typing..." for a customer (protocol section 5d). It is not a
@@ -273,6 +313,9 @@ var payloadTypes = map[string]func() any{
 	TypeAck:             func() any { return &Ack{} },
 	TypePresence:        func() any { return &Presence{} },
 	TypeLzPoll:          func() any { return &LzPoll{} },
+	TypeAnnotate:        func() any { return &Annotate{} },
+	TypeSetRelay:        func() any { return &SetRelay{} },
+	TypeStaffRelay:      func() any { return &StaffRelay{} },
 }
 
 // KnownType reports whether t is a protocol v1 message type.
@@ -471,6 +514,26 @@ func (e *EditCard) Validate() error {
 		return fmt.Errorf("edit_card.title is longer than %d characters", MaxTitle)
 	}
 	return validateISO("edit_card.expires_at", e.ExpiresAt)
+}
+
+func (a *Annotate) Validate() error {
+	if !conversationRe.MatchString(a.Conversation) {
+		return fmt.Errorf("annotate.conversation is not a channel-prefixed id")
+	}
+	if a.HubMsgID == "" {
+		return fmt.Errorf("annotate.hub_msg_id missing")
+	}
+	if strings.TrimSpace(a.Text) == "" {
+		return fmt.Errorf("annotate.text missing")
+	}
+	return validateISO("annotate.expires_at", a.ExpiresAt)
+}
+
+func (r *SetRelay) Validate() error {
+	if !conversationRe.MatchString(r.Conversation) {
+		return fmt.Errorf("set_relay.conversation is not a channel-prefixed id")
+	}
+	return validateISO("set_relay.expires_at", r.ExpiresAt)
 }
 
 func (p *Presence) Validate() error {

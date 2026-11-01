@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000T1",
+  "type": "set_relay",
+  "ts": "2026-11-01T09:30:20.000Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "on": true,
+    "expires_at": "2026-11-01T09:40:20.000Z"
+  }
+}

@@ -55,6 +55,15 @@ type TopicPoster interface {
 	EditCardMessage(ctx context.Context, tgChatID, tgMsgID int64, text TopicText, kb Keyboard) error
 	// DeleteMessage removes a message the bot posted.
 	DeleteMessage(ctx context.Context, tgChatID, tgMsgID int64) error
+	// PostTextReply posts text as a reply to a message of the same group. A
+	// replied-to message that is gone is an error the executor recognises
+	// (isReplyGone) and answers by posting without the reply link.
+	PostTextReply(ctx context.Context, threadID, replyToMsgID int64, text TopicText) (tgMsgID int64, err error)
+	// PostCardReply is PostCard as a reply to a message of the same group.
+	PostCardReply(ctx context.Context, threadID, replyToMsgID int64, text TopicText, kb Keyboard) (tgChatID, tgMsgID int64, err error)
+	// EditPost replaces the text (or, when caption is true, the caption) of a
+	// post the bot made, keeping everything else about it.
+	EditPost(ctx context.Context, tgChatID, tgMsgID int64, text TopicText, caption bool) error
 }
 
 // Bridge is the part of the bridge's own state the link needs.
@@ -76,6 +85,9 @@ type Bridge interface {
 	// per WhatsApp message: a forwarded message that already had a pair gets
 	// another one, so callers compare before and after.
 	PairIDsFor(tgMsgID, tgThreadID int64, waChat string) ([]string, error)
+	// TopicMsgOf returns the topic post bridged for a WhatsApp message of a
+	// chat, for `annotate`. found is false when the Hub has none.
+	TopicMsgOf(waMsgID, chatKey string) (tgMsgID, threadID int64, found bool, err error)
 }
 
 // OwnerNotifier tells the bridge's owner something on Telegram.
@@ -136,12 +148,36 @@ type Executor struct {
 	// Presence is told when a reply to a conversation starts and ends, so its
 	// "typing..." stops. Nil when there is none.
 	Presence ReplyPresence
+	// Relay holds the translation features' state (protocol section 5f): the
+	// per-conversation switch, the topic posts `annotate` can edit, and the
+	// watchdog a relayed reply stops. Nil leaves those commands unavailable.
+	Relay *RelayKit
 }
 
 const (
 	mirrorPrefix = "🤖 "
 	notePrefix   = "ℹ️ "
 )
+
+// isReplyGone recognises Telegram refusing a reply to a message that was
+// deleted, which the mirror answers by posting without the reply link.
+func isReplyGone(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "replied not found")
+}
+
+// postText posts into a topic, as a reply to replyTo when that is not 0. A
+// reply target that was deleted since is no reason to lose the post.
+func (e *Executor) postText(ctx context.Context, thread, replyTo int64, text TopicText) (int64, error) {
+	if replyTo == 0 {
+		return e.Topics.PostText(ctx, thread, text)
+	}
+	id, err := e.Topics.PostTextReply(ctx, thread, replyTo, text)
+	if isReplyGone(err) {
+		e.Log.Debug("agent link: the post to reply to is gone, posting without the reply link")
+		return e.Topics.PostText(ctx, thread, text)
+	}
+	return id, err
+}
 
 // Handle executes one command envelope and returns its single result. A command
 // id seen before returns the stored result and executes nothing.
@@ -180,7 +216,13 @@ func (e *Executor) run(ctx context.Context, env Envelope) Result {
 			// at the end, in case a late typing started one while it went out.
 			e.stopTyping(p.Conversation)
 			defer e.stopTyping(p.Conversation)
-			return e.sendReply(ctx, p)
+			res := e.sendReply(ctx, p)
+			// The customer has the staff's words (maybe only the first part), so
+			// the "not sent yet" reminder would be wrong now.
+			if p.RelayOf != "" && (res.OK || res.HubMsgID != "") {
+				e.Relay.cancelWatchdog(p.RelayOf)
+			}
+			return res
 		case "note":
 			return e.sendNote(ctx, p)
 		case "card":
@@ -193,6 +235,16 @@ func (e *Executor) run(ctx context.Context, env Envelope) Result {
 			return fail(ErrExpired)
 		}
 		return e.editCard(ctx, p)
+	case *SetRelay:
+		if e.expired(p.ExpiresAt) {
+			return fail(ErrExpired)
+		}
+		return e.setRelay(p)
+	case *Annotate:
+		if e.expired(p.ExpiresAt) {
+			return fail(ErrExpired)
+		}
+		return e.annotate(ctx, p)
 	default:
 		return fail(ErrInvalid)
 	}
@@ -239,7 +291,7 @@ func (e *Executor) sendNote(ctx context.Context, p *Send) Result {
 	if !found {
 		return fail(ErrUnknownConversation)
 	}
-	if _, err := e.Topics.PostText(ctx, thread, renderNote(p.Text)); err != nil {
+	if _, err := e.Topics.PostText(ctx, thread, renderNoteTr(p.Text, p.Translation)); err != nil {
 		e.Log.Error("agent link: could not post note", zap.Error(err))
 		return fail(ErrInternal)
 	}
@@ -367,6 +419,7 @@ func (e *Executor) sendReply(ctx context.Context, p *Send) Result {
 		// One mirror post: the main content, plus the copyables and the link as
 		// label: value lines. The signature closes the reply's last message.
 		parts := mirrorParts{Text: it.plain}
+		decorateMirror(p, &parts, i == 0)
 		if i == 0 {
 			parts.Lines = extraLines(copyables, p.Link)
 		}
@@ -465,7 +518,7 @@ func (e *Executor) mirror(ctx context.Context, key string, thread int64, waID st
 	var err error
 	if m == nil {
 		text, _ := renderMirror(parts, tgTextLimit)
-		tgID, err = e.Topics.PostText(ctx, thread, text)
+		tgID, err = e.postText(ctx, thread, parts.ReplyTo, text)
 	} else {
 		text, _ := renderMirror(parts, tgCaptionLimit)
 		mm := *m

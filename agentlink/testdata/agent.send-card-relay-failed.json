@@ -1,0 +1,22 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000T6",
+  "type": "send",
+  "ts": "2026-11-01T09:31:25.000Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "kind": "card",
+    "card_id": "relay_01JB00000000000000000000TR",
+    "title": "⚠️ Not sent",
+    "text": "The translation changed a number or link.\n\nYes, we ship to Penang. Usually 2-3 working days, RM 10 shipping.",
+    "relay_of": "-1001234567890:5521",
+    "media": [],
+    "buttons": [
+      [
+        { "id": "relay_retry", "label": "Retry" },
+        { "id": "relay_edit", "label": "Edit" }
+      ]
+    ],
+    "expires_at": "2026-11-01T09:41:25.000Z"
+  }
+}

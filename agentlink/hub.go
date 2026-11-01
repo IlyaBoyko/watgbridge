@@ -44,6 +44,10 @@ type Deps struct {
 	WAPresence WAPresence
 	TGPresence TGPresence
 	Presence   PresenceOptions
+	// AfterFunc and RelayWatchdog time the "not sent yet" reminder of a relayed
+	// staff post (tests). Nil and zero mean time.AfterFunc and 60 s.
+	AfterFunc     AfterFunc
+	RelayWatchdog time.Duration
 	// Link timing overrides, for tests. Zero means the protocol defaults.
 	Link LinkOptions
 }
@@ -64,6 +68,8 @@ type Hub struct {
 	exec   *Executor
 	// presence keeps "typing..." alive; nil on a disabled Hub.
 	presence *PresenceKeeper
+	// relay is the translation features' state; nil on a disabled Hub.
+	relay *RelayKit
 
 	runOnce sync.Once
 	done    chan struct{}
@@ -93,6 +99,7 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 	h.outbox = NewOutbox(d.DB, d.Clock)
 	h.mem = NewCommandMemory(d.DB, d.Clock)
 	h.cards = NewCardStore(d.DB, d.Clock)
+	h.relay = NewRelayKit(d.DB, d.Clock, d.Log, d.AfterFunc, d.RelayWatchdog)
 
 	if cfg.OutboxMaxAgeDays > 0 {
 		cutoff := d.Clock.Now().Add(-time.Duration(cfg.OutboxMaxAgeDays) * 24 * time.Hour)
@@ -107,7 +114,7 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 	}
 	h.prune()
 
-	h.exec = &Executor{WA: d.WA, Topics: d.Topics, Customer: d.Customer, Lazada: d.Lazada, Bridge: d.Bridge, MarkRead: d.MarkRead, Memory: h.mem, Cards: h.cards, Clock: d.Clock, Guard: h.guard, Log: d.Log}
+	h.exec = &Executor{WA: d.WA, Topics: d.Topics, Customer: d.Customer, Lazada: d.Lazada, Bridge: d.Bridge, MarkRead: d.MarkRead, Memory: h.mem, Cards: h.cards, Clock: d.Clock, Guard: h.guard, Log: d.Log, Relay: h.relay}
 	po := d.Presence
 	po.WA, po.TG, po.Bridge, po.Clock, po.Log = d.WAPresence, d.TGPresence, d.Bridge, d.Clock, d.Log
 	h.presence = NewPresenceKeeper(po)
@@ -129,6 +136,7 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 		if d.Lazada != nil {
 			opt.Features = append(opt.Features, FeatureLzPoll)
 		}
+		opt.Features = append(opt.Features, FeatureTranslation)
 	}
 	if d.Lazada != nil {
 		opt.Lazada = d.Lazada
@@ -145,6 +153,9 @@ func (h *Hub) Link() *Link { return h.link }
 
 // prune forgets old command results and old cards.
 func (h *Hub) prune() {
+	if _, err := h.relay.Prune(); err != nil {
+		h.log.Warn("agent link: could not prune the relay bookkeeping", zap.Error(err))
+	}
 	if n, err := h.mem.Prune(); err != nil {
 		h.log.Warn("agent link: could not prune command results", zap.Error(err))
 	} else if n > 0 {

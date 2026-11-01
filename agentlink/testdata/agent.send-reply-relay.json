@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000T3",
+  "type": "send",
+  "ts": "2026-11-01T09:31:05.000Z",
+  "payload": {
+    "conversation": "wa:60123456789@s.whatsapp.net",
+    "kind": "reply",
+    "text": "Ya, kami hantar ke Penang. Biasanya 2-3 hari bekerja, shipping RM 10.",
+    "media": [],
+    "reply_to": "3EB0A1B2C3D4E5F6",
+    "relay_of": "-1001234567890:5521",
+    "signature": "Sent by Ilya (translated)",
+    "expires_at": "2026-11-01T09:41:05.000Z"
+  }
+}

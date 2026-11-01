@@ -51,7 +51,7 @@ func (e *Executor) sendCard(ctx context.Context, p *Send) Result {
 		return fail(ErrInvalid)
 	}
 
-	chatID, msgID, err := e.Topics.PostCard(ctx, thread, renderCard(p.Title, p.Text), kb)
+	chatID, msgID, err := e.postCard(ctx, thread, relayReplyTarget(p.RelayOf), renderCardTr(p.Title, p.Text, p.Translation), kb)
 	if err != nil {
 		// Nothing was posted, so the card id must stay usable.
 		e.dropCard(row.ID)
@@ -61,6 +61,11 @@ func (e *Executor) sendCard(ctx context.Context, p *Send) Result {
 	if err := e.Cards.SetMessage(row.ID, chatID, msgID); err != nil {
 		e.Log.Error("agent link: could not record where the card was posted", zap.Error(err))
 		return fail(ErrInternal)
+	}
+	// The Agent could not translate the staff text: the card is the answer, so the
+	// "not sent yet" reminder is no longer right.
+	if p.RelayOf != "" {
+		e.Relay.cancelWatchdog(p.RelayOf)
 	}
 	return Result{OK: true}
 }
@@ -97,7 +102,7 @@ func (e *Executor) editCard(ctx context.Context, p *EditCard) Result {
 		return fail(ErrInvalid)
 	}
 
-	if err := e.Topics.EditCardMessage(ctx, row.TgChatID, row.TgMsgID, renderCard(p.Title, p.Text), kb); err != nil && !isNotModified(err) {
+	if err := e.Topics.EditCardMessage(ctx, row.TgChatID, row.TgMsgID, renderCardTr(p.Title, p.Text, p.Translation), kb); err != nil && !isNotModified(err) {
 		e.Log.Error("agent link: could not edit the card", zap.Error(err))
 		return fail(ErrInternal)
 	}
@@ -160,4 +165,19 @@ func isMessageGone(err error) bool {
 // already says, which is the outcome the Agent asked for.
 func isNotModified(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "message is not modified")
+}
+
+// postCard posts a card, as a reply to replyTo when that is not 0 (the staff
+// post a relay failure card answers). A reply target that is gone costs the
+// card nothing.
+func (e *Executor) postCard(ctx context.Context, thread, replyTo int64, text TopicText, kb Keyboard) (chatID, msgID int64, err error) {
+	if replyTo == 0 {
+		return e.Topics.PostCard(ctx, thread, text, kb)
+	}
+	chatID, msgID, err = e.Topics.PostCardReply(ctx, thread, replyTo, text, kb)
+	if isReplyGone(err) {
+		e.Log.Debug("agent link: the post to reply to is gone, posting the card without the reply link")
+		return e.Topics.PostCard(ctx, thread, text, kb)
+	}
+	return chatID, msgID, err
 }

@@ -157,6 +157,7 @@ func (e *Executor) sendReplyTelegram(ctx context.Context, p *Send) Result {
 		return fail(ErrInvalid)
 	}
 	quote := quotedCustomerMsg(userID, p.ReplyTo)
+	textIdx := textMessageIndex(plan, p.Text)
 
 	var first string
 	mirrored := true
@@ -195,6 +196,7 @@ func (e *Executor) sendReplyTelegram(ctx context.Context, p *Send) Result {
 			e.Guard.Mark(hubID)
 		}
 		parts := mirrorParts{Text: m.body, Lines: m.lines, HTML: m.formatted}
+		decorateMirror(p, &parts, i == textIdx)
 		if i == len(plan)-1 {
 			parts.Signature = p.Signature
 		}
@@ -226,11 +228,11 @@ func (e *Executor) mirrorTelegram(ctx context.Context, chatID, thread, customerM
 	plainParts.HTML, plainParts.Text = false, StripHTML(parts.Text)
 	postText := func(limit int) (int64, error) {
 		text, _ := renderMirror(parts, limit)
-		id, err := e.Topics.PostText(ctx, thread, text)
+		id, err := e.postText(ctx, thread, parts.ReplyTo, text)
 		if err != nil && parts.HTML {
 			e.Log.Warn("agent link: the topic refused the formatted mirror, posting it as plain text", zap.Error(err))
 			text, _ = renderMirror(plainParts, limit)
-			return e.Topics.PostText(ctx, thread, text)
+			return e.postText(ctx, thread, parts.ReplyTo, text)
 		}
 		return id, err
 	}

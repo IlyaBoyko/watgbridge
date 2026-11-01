@@ -293,7 +293,7 @@ func isStaffUser(b *gotgbot.Bot, u *gotgbot.User) bool {
 // IsCardCallbackQuery tells the dispatcher which callback queries are for the
 // Agent's cards.
 func IsCardCallbackQuery(cq *gotgbot.CallbackQuery) bool {
-	return cq != nil && IsCardCallback(cq.Data)
+	return cq != nil && (IsCardCallback(cq.Data) || IsRelayCallback(cq.Data))
 }
 
 // CardCallbackHandler handles a press on a button of one of the Agent's
@@ -308,7 +308,11 @@ func CardCallbackHandler(b *gotgbot.Bot, c *ext.Context) error {
 	if u := c.EffectiveSender.User; isStaffUser(b, u) {
 		in.Authorized, in.UserID, in.UserName = true, u.Id, tgUserName(u)
 	}
-	_, err := cq.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: h.HandleCallback(in)})
+	answer := h.HandleCallback(in)
+	if IsRelayCallback(cq.Data) {
+		answer = h.HandleRelayCallback(in)
+	}
+	_, err := cq.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: answer})
 	return err
 }
 
@@ -335,4 +339,71 @@ func WatchForwardedMessage(c *ext.Context, forwarded *gotgbot.Message, target wa
 		in.TgUserID, in.Name = from.Id, tgUserName(from)
 	}
 	return h.WatchForward(in)
+}
+
+// HandleTopicRelay intercepts staff text in a customer's topic while the
+// translation relay is on for it (protocol section 5f.4). It returns true when
+// the message was taken over, which the caller must then not deliver. The
+// relay never delivers anything itself: the Agent answers with a `send`.
+func HandleTopicRelay(b *gotgbot.Bot, c *ext.Context) bool {
+	h := current.Load() // may be nil: a nil Hub is a disabled one
+	if !h.Enabled() {
+		return false
+	}
+	msg := c.EffectiveMessage
+	if msg == nil || msg.MessageThreadId == 0 || msg.From == nil || msg.From.IsBot || msg.Text == "" {
+		return false
+	}
+	if msg.Poll != nil || msg.Contact != nil || msg.Location != nil || msg.Venue != nil {
+		return false
+	}
+	key, err := database.ChatThreadGetWaFromTg(msg.Chat.Id, msg.MessageThreadId)
+	if err != nil || key == "" {
+		return false
+	}
+	in := RelayInput{
+		ChatKey: key, ChatID: msg.Chat.Id, TopicID: msg.MessageThreadId, MsgID: msg.MessageId,
+		AuthorID: msg.From.Id, AuthorName: tgUserName(msg.From),
+		IsStaff: isStaffUser(b, msg.From), IsBot: msg.From.IsBot,
+		IsEdit: c.EditedMessage != nil, Text: msg.Text, TextOnly: true,
+	}
+	// The same resolution as control.target_hub_msg_id in HandleTopicCommand.
+	in.ReplyTo = quotedWaID(msg)
+	if _, isTg := ParseTgChatKey(key); isTg && h.deps.Customer != nil && msg.ReplyToMessage != nil {
+		in.ReplyTo = h.deps.Customer.HubMsgIDOfTopicMsg(msg.MessageThreadId, msg.ReplyToMessage.MessageId)
+	}
+	return h.RelayTopicMessage(in)
+}
+
+// IsRelayedPost reports whether the relay took over a staff post. An edit of
+// such a post changes nothing: no text of it was ever sent to the customer.
+func IsRelayedPost(chatID, msgID int64) bool {
+	h := current.Load()
+	if !h.Enabled() || h.relay == nil || !h.relay.IsRelayPost(chatID, msgID) {
+		return false
+	}
+	h.log.Debug("agent link: an edit of a relayed staff post is ignored")
+	return true
+}
+
+// RecordTopicPost remembers the HTML of a post the bridge bot made in a topic,
+// so `annotate` can add a line to it later. Posts with buttons are skipped (an
+// edit would have to repeat them), and so are posts without text or caption.
+func RecordTopicPost(msg *gotgbot.Message) {
+	h := current.Load()
+	if !h.Enabled() || h.relay == nil || msg == nil || msg.MessageId == 0 || msg.ReplyMarkup != nil {
+		return
+	}
+	row := TopicPostRow{TgMsgID: msg.MessageId, TgChatID: msg.Chat.Id}
+	switch {
+	case msg.Text != "":
+		row.HTML = msg.OriginalHTML()
+	case msg.Caption != "":
+		row.HTML, row.Caption = msg.OriginalCaptionHTML(), true
+	default:
+		return
+	}
+	if err := h.relay.SaveTopicPost(row); err != nil {
+		h.log.Warn("agent link: could not remember a topic post", zap.Error(err))
+	}
 }

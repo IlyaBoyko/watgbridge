@@ -202,6 +202,12 @@ func BridgeTelegramToWhatsAppHandler(b *gotgbot.Bot, c *ext.Context) error {
 		return nil
 	}
 
+	// Staff text while the translation relay is on goes to the Agent, never to the
+	// customer as written.
+	if agentlink.HandleTopicRelay(b, c) {
+		return nil
+	}
+
 	// A topic of a Telegram customer is answered through the customer bot,
 	// never through WhatsApp.
 	if tgcustomer.HandleTopicMessage(b, c) {

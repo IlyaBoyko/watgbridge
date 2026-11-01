@@ -32,7 +32,7 @@ func (TokenRow) TableName() string { return "lazada_tokens" }
 // the bridge's tables, so it is safe on a database that already holds
 // ChatThreadPair and MsgIdPair rows.
 func Migrate(db *gorm.DB) error {
-	return db.AutoMigrate(&TokenRow{}, &CursorRow{}, &MetaRow{}, &SentRow{})
+	return db.AutoMigrate(&TokenRow{}, &CursorRow{}, &MetaRow{}, &SentRow{}, &TopicMsgRow{})
 }
 
 // tokenStore reads and writes the single token row.
@@ -182,5 +182,37 @@ func (s *Store) WasSent(sessionID, messageID string) (bool, error) {
 // PruneSent drops rows older than sentRetention.
 func (s *Store) PruneSent() (int64, error) {
 	res := s.db.Where("created_at < ?", s.now().Add(-sentRetention)).Delete(&SentRow{})
+	if res.Error == nil {
+		s.db.Where("created_at < ?", s.now().Add(-sentRetention)).Delete(&TopicMsgRow{})
+	}
 	return res.RowsAffected, res.Error
+}
+
+// TopicMsgRow ties a Lazada message to the topic post that shows it, so the
+// Agent's `annotate` can find the post. The first post of a message wins.
+type TopicMsgRow struct {
+	ID         uint      `gorm:"primaryKey;autoIncrement"`
+	SessionID  string    `gorm:"not null;uniqueIndex:idx_lz_topicmsg,priority:1"`
+	MessageID  string    `gorm:"not null;uniqueIndex:idx_lz_topicmsg,priority:2"`
+	TopicMsgID int64     `gorm:"not null"`
+	CreatedAt  time.Time `gorm:"index"`
+}
+
+func (TopicMsgRow) TableName() string { return "lazada_topic_msg" }
+
+// RecordTopicMsg notes which topic post shows a message. A message that already
+// has one keeps it.
+func (s *Store) RecordTopicMsg(sessionID, messageID string, topicMsgID int64) error {
+	return s.db.Where(TopicMsgRow{SessionID: sessionID, MessageID: messageID}).
+		Attrs(TopicMsgRow{TopicMsgID: topicMsgID, CreatedAt: s.now()}).FirstOrCreate(&TopicMsgRow{}).Error
+}
+
+// TopicMsgFor returns the topic post that shows a message.
+func (s *Store) TopicMsgFor(sessionID, messageID string) (int64, bool, error) {
+	var row TopicMsgRow
+	err := s.db.Where("session_id = ? AND message_id = ?", sessionID, messageID).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, false, nil
+	}
+	return row.TopicMsgID, err == nil, err
 }

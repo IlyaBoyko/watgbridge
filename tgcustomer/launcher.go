@@ -158,3 +158,12 @@ func (l *Launcher) SendTyping(ctx context.Context, chatID int64) error {
 	}
 	return s.SendTyping(ctx, chatID)
 }
+
+// TopicMsgOf is agentlink.TopicFinder: nothing is found until the bot is up.
+func (l *Launcher) TopicMsgOf(conversation, hubMsgID string) (int64, bool, error) {
+	s := l.svc.Load()
+	if s == nil {
+		return 0, false, nil
+	}
+	return s.TopicMsgOf(conversation, hubMsgID)
+}
