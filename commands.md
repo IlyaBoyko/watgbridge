@@ -12,6 +12,10 @@ This document lists all the Telegram commands available in the WhatsApp-Telegram
 - **Description:** Verifies that the bot is running and checks its active status.
 - **Usage:** `/start`
 
+### `/wa_pair`
+- **Description:** Owner only, in the bot's private chat, and only while WhatsApp is not linked. Starts one pairing attempt: QR codes arrive for about 2.5 minutes. The bridge never pairs on its own, after a restart or a logout it waits for this command, and it allows at most one attempt per 3 minutes.
+- **Usage:** `/wa_pair`
+
 ---
 
 ## Chat & Contact Discovery
