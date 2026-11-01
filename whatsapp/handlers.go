@@ -2079,5 +2079,5 @@ func LogoutHandler(v *events.LoggedOut) {
 	utils.TgSendTextById(tgBot, cfg.Telegram.OwnerID, 0, updateText)
 
 	// Linking again waits for the owner's /wa_pair; nothing reconnects alone.
-	go WaitForPairing(context.Background())
+	go WaitForPairing(context.Background(), false)
 }

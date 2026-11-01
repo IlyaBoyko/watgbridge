@@ -75,9 +75,13 @@ func (h *pairHarness) waitNotes(t *testing.T, n int) {
 // each attempt calls during(n) first (n counts from 0), so tests can act
 // while an attempt is running.
 func (h *pairHarness) run(ctx context.Context, results []error, during func(n int)) <-chan error {
+	return h.runFrom(ctx, false, results, during)
+}
+
+func (h *pairHarness) runFrom(ctx context.Context, tryFirst bool, results []error, during func(n int)) <-chan error {
 	done := make(chan error, 1)
 	go func() {
-		done <- pairLoop(ctx, h.requests, func() error {
+		done <- pairLoop(ctx, tryFirst, h.requests, func() error {
 			n := h.attemptCount()
 			if during != nil {
 				during(n)
@@ -104,6 +108,34 @@ func TestPairLoopNeverAttemptsWithoutARequest(t *testing.T) {
 	}
 	if h.noteCount() != 1 {
 		t.Fatalf("notes = %q, want only the 'not linked' notice", h.notes)
+	}
+}
+
+func TestPairLoopStartupTriesOnceThenStops(t *testing.T) {
+	h := newPairHarness()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := h.runFrom(ctx, true, []error{errors.New("pairing ended: timeout"), nil}, nil)
+	h.waitNotes(t, 2) // "QR codes follow", then "stopping"
+	time.Sleep(20 * time.Millisecond)
+	if got := h.attemptCount(); got != 1 {
+		t.Fatalf("attempts = %d after an unscanned startup attempt, want exactly 1", got)
+	}
+
+	// The gap counts from the automatic attempt too.
+	h.ask()
+	h.waitNotes(t, 3)
+	if got := h.attemptCount(); got != 1 {
+		t.Fatalf("an attempt ran inside the gap (attempts = %d)", got)
+	}
+
+	h.advance(pairMinGap)
+	h.ask()
+	if err := <-done; err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	cancel()
+	if got := h.attemptCount(); got != 2 {
+		t.Fatalf("attempts = %d, want 2", got)
 	}
 }
 

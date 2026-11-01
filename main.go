@@ -191,7 +191,7 @@ func main() {
 
 	err = whatsapp.NewWhatsAppClient()
 	if errors.Is(err, whatsapp.ErrNotPaired) {
-		err = whatsapp.WaitForPairing(context.Background())
+		err = whatsapp.WaitForPairing(context.Background(), true)
 	}
 	if err != nil {
 		panic(err)

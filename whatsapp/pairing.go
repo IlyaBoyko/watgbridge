@@ -38,12 +38,13 @@ const (
 // pairing hold does not start a second one.
 var pairingHeld atomic.Bool
 
-// WaitForPairing blocks until the owner has linked WhatsApp. It never
-// contacts WhatsApp on its own: each pairing attempt (one connection, about
-// 2.5 minutes of QR codes) starts only on the owner's /wa_pair, at most one
-// per pairMinGap. A restart, crash or logout therefore never turns into a
-// stream of pairing connections to WhatsApp.
-func WaitForPairing(ctx context.Context) error {
+// WaitForPairing blocks until the owner has linked WhatsApp. A pairing
+// attempt is one connection showing about 2.5 minutes of QR codes. With
+// tryFirst (a fresh start) one attempt runs at once; after that, and always
+// without tryFirst (a logout), attempts start only on the owner's /wa_pair,
+// at most one per pairMinGap. The process never exits over a missed scan,
+// so nothing turns into a stream of pairing connections to WhatsApp.
+func WaitForPairing(ctx context.Context, tryFirst bool) error {
 	if !pairingHeld.CompareAndSwap(false, true) {
 		return nil
 	}
@@ -81,8 +82,8 @@ func WaitForPairing(ctx context.Context) error {
 		defer dispatcher.RemoveHandlerFromGroup(h.Name(), pairHandlerGroup)
 	}
 
-	logger.Warn("WhatsApp is not linked; waiting for the owner's /wa_pair before contacting WhatsApp")
-	err := pairLoop(ctx, requests, func() error { return pairOnce(logger) }, notify, time.Now)
+	logger.Warn("WhatsApp is not linked", zap.Bool("pairing_now", tryFirst))
+	err := pairLoop(ctx, tryFirst, requests, func() error { return pairOnce(logger) }, notify, time.Now)
 	if err == nil {
 		logger.Info("successfully logged into WhatsApp",
 			zap.String("push_name", state.State.WhatsAppClient.Store.PushName),
@@ -92,25 +93,32 @@ func WaitForPairing(ctx context.Context) error {
 	return err
 }
 
-// pairLoop is WaitForPairing without Telegram or WhatsApp: it runs attempt
-// once per request, never sooner than pairMinGap after the last start, and
-// drops requests that arrive while an attempt runs.
-func pairLoop(ctx context.Context, requests <-chan struct{}, attempt func() error, notify func(string), now func() time.Time) error {
-	notify("WhatsApp is not linked, so the bridge is not contacting WhatsApp at all.\n\n" +
-		"Send /" + pairCommand + " here when you have the phone ready. QR codes follow for about 2.5 minutes; " +
-		"scan one in WhatsApp → Linked devices.")
+// pairLoop is WaitForPairing without Telegram or WhatsApp. With tryFirst it
+// runs one attempt straight away; every other attempt waits for a request,
+// never sooner than pairMinGap after the last start, and requests that
+// arrive while an attempt runs are dropped.
+func pairLoop(ctx context.Context, tryFirst bool, requests <-chan struct{}, attempt func() error, notify func(string), now func() time.Time) error {
+	if tryFirst {
+		notify("WhatsApp is not linked. QR codes follow for about 2.5 minutes: scan one in WhatsApp → Linked devices.")
+	} else {
+		notify("WhatsApp is not linked, so the bridge is not contacting WhatsApp at all.\n\n" +
+			"Send /" + pairCommand + " here when you have the phone ready. QR codes follow for about 2.5 minutes; " +
+			"scan one in WhatsApp → Linked devices.")
+	}
 	var lastStart time.Time
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-requests:
-		}
-		if !lastStart.IsZero() {
-			if wait := pairMinGap - now().Sub(lastStart); wait > 0 {
-				notify(fmt.Sprintf("The last pairing started less than %d minutes ago. Send /%s again in %d seconds.",
-					int(pairMinGap.Minutes()), pairCommand, int(wait.Seconds())+1))
-				continue
+	for first := tryFirst; ; first = false {
+		if !first {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-requests:
+			}
+			if !lastStart.IsZero() {
+				if wait := pairMinGap - now().Sub(lastStart); wait > 0 {
+					notify(fmt.Sprintf("The last pairing started less than %d minutes ago. Send /%s again in %d seconds.",
+						int(pairMinGap.Minutes()), pairCommand, int(wait.Seconds())+1))
+					continue
+				}
 			}
 		}
 		lastStart = now()
@@ -124,7 +132,7 @@ func pairLoop(ctx context.Context, requests <-chan struct{}, attempt func() erro
 			notify("WhatsApp is linked.")
 			return nil
 		}
-		notify(fmt.Sprintf("WhatsApp was not linked (%s). The bridge is not contacting WhatsApp. Send /%s to try again.",
+		notify(fmt.Sprintf("WhatsApp was not linked (%s), so I'm stopping: the bridge will not contact WhatsApp again until you send /%s.",
 			html.EscapeString(err.Error()), pairCommand))
 	}
 }

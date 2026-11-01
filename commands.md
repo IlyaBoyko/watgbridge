@@ -13,7 +13,7 @@ This document lists all the Telegram commands available in the WhatsApp-Telegram
 - **Usage:** `/start`
 
 ### `/wa_pair`
-- **Description:** Owner only, in the bot's private chat, and only while WhatsApp is not linked. Starts one pairing attempt: QR codes arrive for about 2.5 minutes. The bridge never pairs on its own, after a restart or a logout it waits for this command, and it allows at most one attempt per 3 minutes.
+- **Description:** Owner only, in the bot's private chat, and only while WhatsApp is not linked. Starts one pairing attempt: QR codes arrive for about 2.5 minutes. When the bridge starts without a session it makes one attempt by itself. If nobody scans, it says it is stopping and waits for this command. After a logout it waits for this command straight away. At most one attempt runs per 3 minutes.
 - **Usage:** `/wa_pair`
 
 ---
