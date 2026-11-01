@@ -2077,4 +2077,7 @@ func LogoutHandler(v *events.LoggedOut) {
 	updateText := "You have been logged out from WhatsApp:\n\n"
 	updateText += fmt.Sprintf("<b>Reason:</b> %s", html.EscapeString(v.Reason.String()))
 	utils.TgSendTextById(tgBot, cfg.Telegram.OwnerID, 0, updateText)
+
+	// Linking again waits for the owner's /wa_pair; nothing reconnects alone.
+	go WaitForPairing(context.Background())
 }
