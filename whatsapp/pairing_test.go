@@ -3,10 +3,17 @@ package whatsapp
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"watgbridge/state"
+
+	_ "github.com/mattn/go-sqlite3"
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store/sqlstore"
 )
 
 type pairHarness struct {
@@ -268,5 +275,35 @@ func TestStatusText(t *testing.T) {
 	}
 	if got := p.statusText(waLink{}, start.Add(pairMinGap)); strings.Contains(got, "Pair available") {
 		t.Fatalf("after the gap: %q", got)
+	}
+}
+
+func TestClientForPairingReplacesADeletedDevice(t *testing.T) {
+	container, err := sqlstore.New(context.Background(), "sqlite3",
+		"file:"+filepath.Join(t.TempDir(), "wa.db")+"?_foreign_keys=on", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prevContainer, prevClient := waContainer, state.State.WhatsAppClient
+	t.Cleanup(func() { waContainer, state.State.WhatsAppClient = prevContainer, prevClient })
+	waContainer = container
+
+	live := whatsmeow.NewClient(container.NewDevice(), nil)
+	state.State.WhatsAppClient = live
+	if got := clientForPairing(); got != live {
+		t.Fatal("a device that was not deleted must keep its client")
+	}
+
+	// What whatsmeow does on a logout: its client then refuses to connect.
+	live.Store.Deleted = true
+	got := clientForPairing()
+	if got == live || got.Store.Deleted || got.Store.ID != nil {
+		t.Fatalf("no fresh unlinked client after a logout: same=%v deleted=%v", got == live, got.Store.Deleted)
+	}
+	if state.State.WhatsAppClient != got {
+		t.Fatal("the bridge still points at the deleted client")
+	}
+	if _, err := got.GetQRChannel(context.Background()); err != nil {
+		t.Fatalf("the new client cannot start pairing: %v", err)
 	}
 }

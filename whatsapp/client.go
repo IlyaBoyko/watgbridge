@@ -160,6 +160,7 @@ func NewWhatsAppClient() error {
 
 	client := whatsmeow.NewClient(deviceStore, waClientLogger)
 	state.State.WhatsAppClient = client
+	waContainer, waClientLog = container, waClientLogger
 
 	// Pairing only ever starts on the owner's command (WaitForPairing), so
 	// a restart can never become a loop of pairing connections.

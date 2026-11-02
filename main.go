@@ -246,6 +246,7 @@ func main() {
 	}
 
 	state.State.WhatsAppClient.AddEventHandler(whatsapp.WhatsAppEventHandler)
+	whatsapp.HoldIfLoggedOut()
 	telegram.AddTelegramHandlers()
 	modules.LoadModuleHandlers()
 

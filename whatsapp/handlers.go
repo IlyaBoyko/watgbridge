@@ -2076,6 +2076,10 @@ func LogoutHandler(v *events.LoggedOut) {
 
 	updateText := "You have been logged out from WhatsApp:\n\n"
 	updateText += fmt.Sprintf("<b>Reason:</b> %s", html.EscapeString(v.Reason.String()))
+	if v.Reason == events.ConnectFailureMainDeviceGone || v.Reason == events.ConnectFailureUnknownLogout {
+		updateText += "\n\nThis can mean the account was locked or banned, or moved to another phone. " +
+			"Open WhatsApp on the phone and check it before pairing again."
+	}
 	utils.TgSendTextById(tgBot, cfg.Telegram.OwnerID, 0, updateText)
 
 	// Linking again waits for the owner's /wa_pair; nothing reconnects alone.

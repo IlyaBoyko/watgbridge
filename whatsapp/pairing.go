@@ -19,8 +19,43 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 	"github.com/mdp/qrterminal/v3"
 	"github.com/skip2/go-qrcode"
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store/sqlstore"
+	waLog "go.mau.fi/whatsmeow/util/log"
 	"go.uber.org/zap"
 )
+
+// Kept from NewWhatsAppClient for clientForPairing.
+var (
+	waContainer *sqlstore.Container
+	waClientLog waLog.Logger
+)
+
+// clientForPairing is the client a pairing attempt uses. A logout deletes the
+// device for good and its client refuses to connect, so linking again needs a
+// new device and a new client, which takes over the bridge's event handler.
+// Module handlers are not moved: no install loads a module.
+func clientForPairing() *whatsmeow.Client {
+	old := state.State.WhatsAppClient
+	if !old.Store.Deleted {
+		return old
+	}
+	old.Disconnect()
+	old.RemoveEventHandlers()
+
+	client := whatsmeow.NewClient(waContainer.NewDevice(), waClientLog)
+	client.AddEventHandler(WhatsAppEventHandler)
+	state.State.WhatsAppClient = client
+	return client
+}
+
+// HoldIfLoggedOut covers a logout that arrived during startup, before the
+// event handler was added: nothing else would start the wait for the owner.
+func HoldIfLoggedOut() {
+	if state.State.WhatsAppClient.Store.Deleted {
+		go WaitForPairing(context.Background(), false)
+	}
+}
 
 // ErrNotPaired is NewWhatsAppClient's answer when the login store holds no
 // WhatsApp session (never linked, or WhatsApp logged the device out).
@@ -365,7 +400,7 @@ func pairLoop(ctx context.Context, p *pairingState, tryFirst bool, attempt func(
 func pairOnce(logger *zap.Logger) error {
 	var (
 		cfg    = state.State.Config
-		client = state.State.WhatsAppClient
+		client = clientForPairing()
 		bot    = state.State.TelegramBot
 	)
 
