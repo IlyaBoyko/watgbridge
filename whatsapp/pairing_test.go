@@ -3,13 +3,14 @@ package whatsapp
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
 type pairHarness struct {
-	requests chan struct{}
+	state *pairingState
 
 	mu       sync.Mutex
 	notes    []string
@@ -18,7 +19,7 @@ type pairHarness struct {
 }
 
 func newPairHarness() *pairHarness {
-	return &pairHarness{requests: make(chan struct{}, 1), clock: time.Unix(1_800_000_000, 0)}
+	return &pairHarness{state: newPairingState(), clock: time.Unix(1_800_000_000, 0)}
 }
 
 func (h *pairHarness) notify(s string) {
@@ -57,7 +58,7 @@ func (h *pairHarness) lastNote() string {
 	return h.notes[len(h.notes)-1]
 }
 
-func (h *pairHarness) ask() { h.requests <- struct{}{} }
+func (h *pairHarness) ask() { h.state.requests <- struct{}{} }
 
 // waitNotes waits until at least n notices were sent.
 func (h *pairHarness) waitNotes(t *testing.T, n int) {
@@ -81,7 +82,7 @@ func (h *pairHarness) run(ctx context.Context, results []error, during func(n in
 func (h *pairHarness) runFrom(ctx context.Context, tryFirst bool, results []error, during func(n int)) <-chan error {
 	done := make(chan error, 1)
 	go func() {
-		done <- pairLoop(ctx, tryFirst, h.requests, func() error {
+		done <- pairLoop(ctx, h.state, tryFirst, func() error {
 			n := h.attemptCount()
 			if during != nil {
 				during(n)
@@ -104,7 +105,7 @@ func TestPairLoopNeverAttemptsWithoutARequest(t *testing.T) {
 		t.Fatalf("err = %v, want deadline", err)
 	}
 	if h.attemptCount() != 0 {
-		t.Fatalf("attempts = %d without any /wa_pair", h.attemptCount())
+		t.Fatalf("attempts = %d without any request", h.attemptCount())
 	}
 	if h.noteCount() != 1 {
 		t.Fatalf("notes = %q, want only the 'not linked' notice", h.notes)
@@ -183,5 +184,89 @@ func TestPairLoopEnforcesGapAndDropsAsksDuringAttempt(t *testing.T) {
 	}
 	if got := h.attemptCount(); got != 2 {
 		t.Fatalf("attempts = %d, want 2", got)
+	}
+}
+
+func TestAskQueuesOnlyWhileWaiting(t *testing.T) {
+	p := newPairingState()
+
+	queued := func() bool {
+		select {
+		case <-p.requests:
+			return true
+		default:
+			return false
+		}
+	}
+
+	if got := p.ask(true); !strings.Contains(got, "already linked") || queued() {
+		t.Fatalf("linked: %q", got)
+	}
+	if got := p.ask(false); !strings.Contains(got, "still starting") || queued() {
+		t.Fatalf("before the hold: %q", got)
+	}
+
+	if !p.beginHold() {
+		t.Fatal("first hold refused")
+	}
+	if p.beginHold() {
+		t.Fatal("second hold allowed while one runs")
+	}
+	p.attemptStarted(time.Unix(1, 0))
+	if got := p.ask(false); !strings.Contains(got, "already running") || queued() {
+		t.Fatalf("during an attempt: %q", got)
+	}
+	p.attemptEnded(errors.New("pairing ended: timeout"))
+	if got := p.ask(false); got != "Pairing requested." || !queued() {
+		t.Fatalf("while waiting: %q", got)
+	}
+}
+
+func TestBeginHoldDropsAStaleAsk(t *testing.T) {
+	p := newPairingState()
+	p.requests <- struct{}{}
+	p.beginHold()
+	select {
+	case <-p.requests:
+		t.Fatal("an ask from before the hold survived and would start an attempt")
+	default:
+	}
+}
+
+func TestStatusText(t *testing.T) {
+	start := time.Unix(1_800_000_000, 0)
+
+	linked := newPairingState().statusText(waLink{
+		linked: true, connected: true, loggedIn: true, name: "A<b", jid: "1@s.whatsapp.net",
+	}, start)
+	if !strings.Contains(linked, "linked and connected") || !strings.Contains(linked, "A&lt;b") {
+		t.Fatalf("linked: %q", linked)
+	}
+
+	reconnecting := newPairingState().statusText(waLink{linked: true}, start)
+	if !strings.Contains(reconnecting, "not connected") {
+		t.Fatalf("reconnecting: %q", reconnecting)
+	}
+
+	p := newPairingState()
+	p.beginHold()
+	if got := p.statusText(waLink{}, start); !strings.Contains(got, "not contacting WhatsApp") || strings.Contains(got, "Last attempt") {
+		t.Fatalf("waiting, no attempt yet: %q", got)
+	}
+
+	p.attemptStarted(start)
+	if got := p.statusText(waLink{}, start.Add(time.Minute)); !strings.Contains(got, "attempt is running") || strings.Contains(got, "Pair available") {
+		t.Fatalf("attempting: %q", got)
+	}
+
+	p.attemptEnded(errors.New("pairing ended: timeout"))
+	got := p.statusText(waLink{}, start.Add(time.Minute))
+	for _, want := range []string{"1m0s ago", "pairing ended: timeout", "Pair available in:</b> 2m0s"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("after a missed scan, %q lacks %q", got, want)
+		}
+	}
+	if got := p.statusText(waLink{}, start.Add(pairMinGap)); strings.Contains(got, "Pair available") {
+		t.Fatalf("after the gap: %q", got)
 	}
 }

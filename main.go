@@ -189,6 +189,9 @@ func main() {
 	}
 	_ = logger.Sync()
 
+	whatsapp.InstallPairingControls()
+	whatsapp.SetOwnerMenu()
+
 	err = whatsapp.NewWhatsAppClient()
 	if errors.Is(err, whatsapp.ErrNotPaired) {
 		err = whatsapp.WaitForPairing(context.Background(), true)
@@ -263,6 +266,7 @@ func main() {
 				zap.Error(err),
 			)
 		}
+		whatsapp.SetOwnerMenu()
 	} else {
 		err = utils.TgClearBotCommands(state.State.TelegramBot)
 		if err != nil {
