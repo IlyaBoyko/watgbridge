@@ -393,7 +393,8 @@ func newWorld(t *testing.T, mod ...func(*worldOpts)) *world {
 	if err := Migrate(db); err != nil {
 		t.Fatal(err)
 	}
-	tokens := NewTokenSource(db, NewAuth(lz.HTTPClient(), lz.URL(), testKey, testSecret, clock.Now), clock.Now)
+	core, logs := observer.New(zap.DebugLevel)
+	tokens := NewTokenSource(db, NewAuth(lz.HTTPClient(), lz.URL(), testKey, testSecret, clock.Now), clock.Now, zap.New(core))
 	if !o.unauth {
 		lz.AllowCode("setup")
 		if _, err := tokens.Authorize(context.Background(), "setup"); err != nil {
@@ -409,7 +410,6 @@ func newWorld(t *testing.T, mod ...func(*worldOpts)) *world {
 		auth = o.auth
 	}
 
-	core, logs := observer.New(zap.DebugLevel)
 	j := &journal{}
 	w := &world{
 		t: t, db: db, lz: lz, clock: clock, j: j, tokens: tokens, logs: logs,
@@ -524,3 +524,7 @@ func contains(lines []string, sub string) bool {
 }
 
 const testOwner = int64(704338780)
+
+func (a *stubAuth) AuthorizeSameShop(ctx context.Context, code string) (Authorized, error) {
+	return a.Authorize(ctx, code)
+}

@@ -127,7 +127,7 @@ func TestSampleConfigDocumentsLazadaAsOff(t *testing.T) {
 func TestLazadaCallbackURL(t *testing.T) {
 	var cfg Config
 	cfg.SetDefaults()
-	if cfg.Lazada.CallbackURL != "https://clarusmolecular.com/" {
+	if cfg.Lazada.CallbackURL != "https://hub.clarusmolecular.com/lazada/callback/my" {
 		t.Errorf("default = %q", cfg.Lazada.CallbackURL)
 	}
 
@@ -137,7 +137,7 @@ func TestLazadaCallbackURL(t *testing.T) {
 		if err := c.LoadConfig(); err != nil {
 			t.Fatal(err)
 		}
-		if c.Lazada.CallbackURL != "https://clarusmolecular.com/" {
+		if c.Lazada.CallbackURL != "https://hub.clarusmolecular.com/lazada/callback/my" {
 			t.Errorf("%s: callback_url = %q", name, c.Lazada.CallbackURL)
 		}
 	}

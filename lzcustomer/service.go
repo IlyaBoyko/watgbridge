@@ -60,6 +60,8 @@ type Events interface {
 // Authorizer is the token side the channel needs. *TokenSource implements it.
 type Authorizer interface {
 	Authorize(ctx context.Context, code string) (Authorized, error)
+	// AuthorizeSameShop refuses a code for another seller (ErrOtherShop).
+	AuthorizeSameShop(ctx context.Context, code string) (Authorized, error)
 	Status() (Authorized, bool)
 }
 

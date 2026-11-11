@@ -83,7 +83,8 @@ func (s *Service) HandleAuth(ctx context.Context, req AuthRequest) {
 	}
 	if req.Args == "" {
 		s.reply(ctx, req.Thread, "Open this link and approve the app: "+s.authLink()+
-			"\n\nApprove, then copy the code= value from the address bar and send /lazada_auth <code> within 30 minutes.")
+			"\n\nThe Hub picks up the code by itself and reports here. If nothing appears within a minute, "+
+			"copy the code= value from the address bar and send /lazada_auth <code> within 30 minutes.")
 		return
 	}
 
@@ -91,11 +92,36 @@ func (s *Service) HandleAuth(ctx context.Context, req AuthRequest) {
 		s.log.Warn("lazada: could not delete the /lazada_auth message", zap.Error(err))
 	}
 
+	// The owner may change shops on purpose, so no same-shop check here.
+	s.exchange(ctx, req.Thread, req.Args, s.o.Auth.Authorize)
+}
+
+// AuthCode is agentlink.LazadaChannel: the code of Lazada's redirect, passed on
+// by the Agent. The exchange is an HTTP call, so it runs in its own goroutine
+// and the link's read loop is not held up. Nobody sent a message, so there is
+// none to delete, and the outcome goes to General. The code is never logged.
+func (s *Service) AuthCode(code string) {
+	go func() {
+		s.exchange(s.life, 0, code, s.o.Auth.AuthorizeSameShop)
+	}()
+}
+
+// exchange runs the code through authorize and reports in the thread. On
+// success the channel is unblocked and a full fetch starts.
+func (s *Service) exchange(ctx context.Context, thread int64, code string,
+	authorize func(context.Context, string) (Authorized, error)) {
 	ctx, cancel := context.WithTimeout(ctx, authTimeout)
 	defer cancel()
-	got, err := s.o.Auth.Authorize(ctx, req.Args)
+	got, err := authorize(ctx, code)
+	var other ErrOtherShop
+	if errors.As(err, &other) {
+		s.reply(ctx, thread, "⚠️ A Lazada authorization arrived for seller "+other.Got+
+			", but this Hub is connected to seller "+other.Stored+
+			". It was ignored and the current authorization stays. To switch shops on purpose, the owner sends /lazada_auth <code>.")
+		return
+	}
 	if err != nil {
-		s.reply(ctx, req.Thread, s.authFailure(err))
+		s.reply(ctx, thread, s.authFailure(err))
 		return
 	}
 
@@ -103,7 +129,7 @@ func (s *Service) HandleAuth(ctx context.Context, req AuthRequest) {
 	if account == "" {
 		account = "(not given)"
 	}
-	s.reply(ctx, req.Thread, "Lazada authorized: seller "+got.SellerID+" ("+got.Country+"), account "+account+
+	s.reply(ctx, thread, "Lazada authorized: seller "+got.SellerID+" ("+got.Country+"), account "+account+
 		". Token valid until "+s.date(got.AccessExpiresAt)+"; re-authorize by "+s.date(got.RefreshExpiresAt)+
 		". Put seller_id "+got.SellerID+" in the agent config (markets.my.lazada.sellerId).")
 
@@ -154,7 +180,7 @@ func (s *Service) checkExpiry(ctx context.Context) {
 		return
 	}
 	text := "Lazada authorization expires on " + s.date(st.RefreshExpiresAt) + ". Re-authorize: " + s.authLink() +
-		", then /lazada_auth <code>."
+		" (the Hub picks up the code by itself)."
 	if _, err := s.o.Topics.Post(ctx, 0, TopicPost{Kind: "text", Text: text}); err != nil {
 		s.log.Warn("lazada: could not post the expiry warning", zap.Error(err))
 		return

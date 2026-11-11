@@ -118,7 +118,7 @@ type Config struct {
 		SafetyPollSeconds int    `yaml:"safety_poll_seconds"` // default 180
 		ActivePollSeconds int    `yaml:"active_poll_seconds"` // default 15; 0 = off (push working)
 		TextLimit         int    `yaml:"text_limit"`          // default 1000 characters (runes)
-		CallbackURL       string `yaml:"callback_url"`        // default https://clarusmolecular.com/; the app's redirect, used in the authorization link
+		CallbackURL       string `yaml:"callback_url"`        // default https://hub.clarusmolecular.com/lazada/callback/my; must equal the redirect URL in the Lazada console exactly, and is used in the authorization link
 	} `yaml:"lazada"`
 }
 
@@ -231,7 +231,9 @@ const (
 	defaultLazadaSafetyPollSeconds = 180
 	defaultLazadaActivePollSeconds = 15
 	defaultLazadaTextLimit         = 1000
-	defaultLazadaCallbackURL       = "https://clarusmolecular.com/"
+	// The Agent's Lazada callback page, which passes the code on to the Hub. It must
+	// match the redirect URL set in the Lazada console exactly.
+	defaultLazadaCallbackURL = "https://hub.clarusmolecular.com/lazada/callback/my"
 )
 
 func (cfg *Config) SetDefaults() {

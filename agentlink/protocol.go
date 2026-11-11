@@ -32,6 +32,7 @@ const (
 	TypeAck             = "ack"
 	TypePresence        = "presence"
 	TypeLzPoll          = "lz_poll"
+	TypeLzAuth          = "lz_auth"
 	TypeAnnotate        = "annotate"
 	TypeSetRelay        = "set_relay"
 	TypeStaffRelay      = "staff.relay"
@@ -133,6 +134,10 @@ const FeatureTranslation = "translation"
 // FeatureLzPoll says the Hub runs the Lazada channel and handles `lz_poll`
 // (protocol section 5e).
 const FeatureLzPoll = "lz_poll"
+
+// FeatureLzAuth says the Hub exchanges the Lazada authorization codes the Agent
+// passes on in `lz_auth` (protocol section 5g).
+const FeatureLzAuth = "lz_auth"
 
 type Welcome struct {
 	Protocol     int    `json:"protocol"`
@@ -281,6 +286,12 @@ type LzPoll struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
+// LzAuth carries the `code` of Lazada's authorization redirect (protocol
+// section 5g). Not a command: no result, no ack. The code is never logged.
+type LzAuth struct {
+	Code string `json:"code"`
+}
+
 // Presence states.
 const (
 	PresenceTyping = "typing"
@@ -313,6 +324,7 @@ var payloadTypes = map[string]func() any{
 	TypeAck:             func() any { return &Ack{} },
 	TypePresence:        func() any { return &Presence{} },
 	TypeLzPoll:          func() any { return &LzPoll{} },
+	TypeLzAuth:          func() any { return &LzAuth{} },
 	TypeAnnotate:        func() any { return &Annotate{} },
 	TypeSetRelay:        func() any { return &SetRelay{} },
 	TypeStaffRelay:      func() any { return &StaffRelay{} },
@@ -548,6 +560,13 @@ func (p *Presence) Validate() error {
 
 // Validate accepts any session id: it is opaque, and an absent one means all.
 func (p *LzPoll) Validate() error { return nil }
+
+func (p *LzAuth) Validate() error {
+	if p.Code == "" {
+		return fmt.Errorf("lz_auth.code missing")
+	}
+	return nil
+}
 
 func (a *Ack) Validate() error {
 	if a.ID == "" {

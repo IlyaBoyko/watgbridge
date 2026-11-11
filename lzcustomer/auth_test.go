@@ -82,7 +82,9 @@ func TestNoArgumentGivesTheAuthorizationLink(t *testing.T) {
 		t.Fatalf("posts = %+v", posts)
 	}
 	text := posts[0].Text
-	if !strings.Contains(text, wantLink) || !strings.Contains(text, "copy the code= value from the address bar and send /lazada_auth <code> within 30 minutes") {
+	wantText := "Open this link and approve the app: " + wantLink + "\n\nThe Hub picks up the code by itself and reports here. " +
+		"If nothing appears within a minute, copy the code= value from the address bar and send /lazada_auth <code> within 30 minutes."
+	if text != wantText {
 		t.Errorf("reply = %q", text)
 	}
 	if len(st.codes) != 0 || len(w.topics.deleted) != 0 {
@@ -226,7 +228,7 @@ func TestExpiryWarningFiresOncePerDayWithinFourteenDays(t *testing.T) {
 		t.Fatalf("%d warnings on one day, want 1", n)
 	}
 	p := w.topics.Posts()[0]
-	want := "Lazada authorization expires on 2026-11-07 10:00 UTC. Re-authorize: " + wantLink + ", then /lazada_auth <code>."
+	want := "Lazada authorization expires on 2026-11-07 10:00 UTC. Re-authorize: " + wantLink + " (the Hub picks up the code by itself)."
 	if p.Thread != 0 || p.Text != want {
 		t.Errorf("warning = thread %d %q, want %q", p.Thread, p.Text, want)
 	}

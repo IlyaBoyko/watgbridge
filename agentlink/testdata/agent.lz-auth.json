@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "id": "01JB00000000000000000000C3",
+  "type": "lz_auth",
+  "ts": "2026-11-11T03:02:10.000Z",
+  "payload": {
+    "code": "0_100000_FAKEfakeFAKEfakeFAKEfake1234"
+  }
+}

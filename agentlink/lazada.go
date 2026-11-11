@@ -13,6 +13,12 @@ type LazadaChannel interface {
 	// the link's read loop; fetching happens in the channel's own goroutine.
 	Poll(sessionID string)
 
+	// AuthCode hands over the code of Lazada's authorization redirect (the
+	// Agent's `lz_auth`). Like Poll it returns at once: the token exchange is an
+	// HTTP call and runs in the channel's own goroutine. The code is never
+	// logged.
+	AuthCode(code string)
+
 	// SendText delivers text to a Lazada session as one or more messages and
 	// returns their Lazada message ids in order. origin is "agent" or "topic".
 	//

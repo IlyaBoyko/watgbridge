@@ -14,6 +14,7 @@ const lzConv = "lz:100094063_2_1011822749_1_103"
 type fakeLazada struct {
 	mu    sync.Mutex
 	polls []string
+	codes []string
 	// send scripts SendText (see exec_lz_test.go); nil sends nothing.
 	send func(session, text, origin string) ([]string, error)
 }
@@ -22,6 +23,18 @@ func (f *fakeLazada) Poll(sessionID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.polls = append(f.polls, sessionID)
+}
+
+func (f *fakeLazada) AuthCode(code string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.codes = append(f.codes, code)
+}
+
+func (f *fakeLazada) Codes() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.codes...)
 }
 
 func (f *fakeLazada) Polls() []string {
@@ -228,7 +241,7 @@ func TestHelloDeclaresLazadaOnlyWhenTheChannelIsOn(t *testing.T) {
 		hp := <-got
 		wantCh, wantFeat := []string{"wa", "tg"}, []string{"presence", "translation"}
 		if on {
-			wantCh, wantFeat = []string{"wa", "tg", "lz"}, []string{"presence", "lz_poll", "translation"}
+			wantCh, wantFeat = []string{"wa", "tg", "lz"}, []string{"presence", "lz_poll", "lz_auth", "translation"}
 		}
 		if !reflect.DeepEqual(hp.Channels, wantCh) || !reflect.DeepEqual(hp.Features, wantFeat) {
 			t.Errorf("lazada on=%v: channels %v features %v, want %v %v", on, hp.Channels, hp.Features, wantCh, wantFeat)
@@ -346,5 +359,57 @@ func TestLazadaMenuEntryOnlyWhenEnabled(t *testing.T) {
 	}
 	if len(base) != 2 || len(MenuCommands()) != 9 {
 		t.Error("the base list or the agent menu was changed")
+	}
+}
+
+// lz_auth is not a command either: the channel gets the exact code, nothing
+// comes back, and an empty code is a schema error.
+func TestLzAuthFramesAreHandedOnWithoutAResult(t *testing.T) {
+	w := newWorld(t)
+	lz := &fakeLazada{}
+	a := newFakeAgent(t, func(s *agentSession) {
+		s.handshake()
+		s.write("LA1", TypeLzAuth, LzAuth{Code: "0_100000_FAKEcode"})
+		s.writeEnv(Envelope{V: 1, ID: "LA2", Type: TypeLzAuth, TS: "2026-11-11T03:02:10.000Z", Payload: json.RawMessage(`{"code":""}`)})
+		env := s.mustNext()
+		if env.Type != TypeError {
+			t.Errorf("frame = %q, want the error for the empty code", env.Type)
+		}
+		var pe ProtocolError
+		_ = json.Unmarshal(env.Payload, &pe)
+		if pe.RefID != "LA2" || pe.Code != "schema" {
+			t.Errorf("error = %+v", pe)
+		}
+		if env, err := s.next(300 * time.Millisecond); err == nil {
+			t.Errorf("unexpected extra frame %q: %s", env.Type, env.Payload)
+		}
+	})
+	startLink(t, lazadaHub(t, w, a.URL(), lz))
+	waitFor(t, "the code", func() bool { return len(lz.Codes()) >= 1 })
+	time.Sleep(350 * time.Millisecond)
+	if got := lz.Codes(); !reflect.DeepEqual(got, []string{"0_100000_FAKEcode"}) {
+		t.Errorf("codes = %q", got)
+	}
+}
+
+func TestLzAuthIsIgnoredWhenTheChannelIsOff(t *testing.T) {
+	w := newWorld(t)
+	w.bridge.threads[lzConv] = 1300
+	frames := make(chan []Envelope, 1)
+	a := newFakeAgent(t, func(s *agentSession) {
+		s.handshake()
+		s.write("LA1", TypeLzAuth, LzAuth{Code: "c"})
+		s.write("NOTE1", TypeSend, Send{Conversation: "wa:60123456789@s.whatsapp.net", Kind: "note", Text: "after", Media: []Media{}, ExpiresAt: FormatTS(time.Now().Add(time.Minute))})
+		frames <- []Envelope{s.mustNext()}
+	})
+	d := w.deps()
+	d.Clock = realClock{}
+	h, err := NewHub(Config{Enabled: true, URL: a.URL(), Token: "secret-token", HubID: "pi-test", OutboxMaxAgeDays: 7}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startLink(t, h)
+	if first := (<-frames)[0]; first.Type != TypeResult {
+		t.Errorf("first frame = %q, want the note's result (nothing for the lz_auth)", first.Type)
 	}
 }

@@ -465,6 +465,20 @@ func (l *Link) handleFrame(data []byte) {
 		}
 		l.opt.Lazada.Poll(p.(*LzPoll).SessionID)
 
+	case TypeLzAuth:
+		// Not a command: no result, no ack, no id memory. The exchange runs in
+		// the channel's goroutine. The payload is never logged: it is the code.
+		p, err := DecodePayload(env)
+		if err != nil {
+			l.queueError(env.ID, "schema", err.Error())
+			return
+		}
+		if l.opt.Lazada == nil {
+			l.log.Debug("agent link: lz_auth ignored, the Lazada channel is off")
+			return
+		}
+		l.opt.Lazada.AuthCode(p.(*LzAuth).Code)
+
 	case TypeError:
 		var pe ProtocolError
 		_ = json.Unmarshal(env.Payload, &pe)

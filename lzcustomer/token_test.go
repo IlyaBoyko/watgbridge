@@ -12,6 +12,7 @@ import (
 	"watgbridge/lzcustomer"
 	"watgbridge/lzcustomer/lzfake"
 
+	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -49,7 +50,7 @@ func newTokenEnv(t *testing.T) *tokenEnv {
 	fake.SetSellerID("seller-77")
 	db := newTestDB(t)
 	auth := lzcustomer.NewAuth(fake.HTTPClient(), fake.URL(), testKey, testSecret, clock.Now)
-	return &tokenEnv{fake: fake, clock: clock, db: db, source: lzcustomer.NewTokenSource(db, auth, clock.Now)}
+	return &tokenEnv{fake: fake, clock: clock, db: db, source: lzcustomer.NewTokenSource(db, auth, clock.Now, zap.NewNop())}
 }
 
 func (e *tokenEnv) authorize(t *testing.T) lzcustomer.Authorized {
@@ -245,7 +246,7 @@ func TestTransientRefreshFailureKeepsTheOldToken(t *testing.T) {
 	e := newTokenEnv(t)
 	e.fake.AllowCode("c")
 	auth := &failingAuth{inner: lzcustomer.NewAuth(e.fake.HTTPClient(), e.fake.URL(), testKey, testSecret, e.clock.Now)}
-	src := lzcustomer.NewTokenSource(e.db, auth, e.clock.Now)
+	src := lzcustomer.NewTokenSource(e.db, auth, e.clock.Now, zap.NewNop())
 	if _, err := src.Authorize(context.Background(), "c"); err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +279,7 @@ func TestTransientRefreshFailureOnAnExpiredTokenIsAnError(t *testing.T) {
 	e := newTokenEnv(t)
 	e.fake.AllowCode("c")
 	auth := &failingAuth{inner: lzcustomer.NewAuth(e.fake.HTTPClient(), e.fake.URL(), testKey, testSecret, e.clock.Now)}
-	src := lzcustomer.NewTokenSource(e.db, auth, e.clock.Now)
+	src := lzcustomer.NewTokenSource(e.db, auth, e.clock.Now, zap.NewNop())
 	if _, err := src.Authorize(context.Background(), "c"); err != nil {
 		t.Fatal(err)
 	}

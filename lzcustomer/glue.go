@@ -214,7 +214,8 @@ func Init() (*Service, error) {
 		return nil, nil
 	}
 	db := state.State.Database
-	tokens := NewTokenSource(db, NewAuth(nil, lz.AuthURL, lz.AppKey, lz.AppSecret, nil), nil)
+	tokens := NewTokenSource(db, NewAuth(nil, lz.AuthURL, lz.AppKey, lz.AppSecret, nil), nil,
+		state.State.Logger.Named("lazada"))
 	s, err := NewService(Options{
 		API:  NewClient(nil, lz.APIURL, lz.AppKey, lz.AppSecret, nil, tokens),
 		Auth: tokens, DB: db,
