@@ -275,6 +275,36 @@ func WaLearnLIDMappingsFromGroups() (int, error) {
 	return learned, nil
 }
 
+// WaGetContactUsername returns the WhatsApp username stored for jid, or for
+// its counterpart (the LID of a phone jid, the phone jid of a LID), without a
+// leading "@". Usernames are stored under the LID, so a phone-addressed chat
+// only finds one through the mapping. It returns "" when none is known.
+func WaGetContactUsername(jid types.JID) string {
+	jid = jid.ToNonAD()
+	if jid.IsEmpty() {
+		return ""
+	}
+	candidates := []types.JID{jid}
+	if client := state.State.WhatsAppClient; client != nil && client.Store != nil && client.Store.LIDs != nil {
+		switch jid.Server {
+		case types.DefaultUserServer:
+			if lid, err := client.Store.LIDs.GetLIDForPN(context.Background(), jid); err == nil && !lid.IsEmpty() {
+				candidates = append(candidates, lid.ToNonAD())
+			}
+		case types.HiddenUserServer:
+			if pn, err := client.Store.LIDs.GetPNForLID(context.Background(), jid); err == nil && !pn.IsEmpty() {
+				candidates = append(candidates, pn.ToNonAD())
+			}
+		}
+	}
+	for _, c := range candidates {
+		if username, err := database.ContactUsernameGet(c.User, c.Server); err == nil && username != "" {
+			return strings.TrimPrefix(username, "@")
+		}
+	}
+	return ""
+}
+
 func WaGetContactName(jid types.JID) string {
 	jid = jid.ToNonAD()
 	if jid == state.State.WhatsAppClient.Store.ID.ToNonAD() || !jid.IsEmpty() && jid == state.State.WhatsAppClient.Store.GetLID().ToNonAD() {
@@ -301,7 +331,7 @@ func WaGetContactName(jid types.JID) string {
 	// number the username if we know it (as WhatsApp itself shows it).
 	tag := display.User
 	if display.Server == types.HiddenUserServer {
-		if username, uErr := database.ContactUsernameGet(display.User, display.Server); uErr == nil && username != "" {
+		if username := WaGetContactUsername(display); username != "" {
 			tag = "@" + username
 		}
 	}

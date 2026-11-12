@@ -175,7 +175,8 @@ func OnWhatsAppMessage(v *events.Message, text string, isEdited bool) {
 	jid, _ := waTypes.ParseJID(key)
 	err := h.EmitCustomerMessage(CustomerInput{
 		ChatKey: key, TopicID: thread, HubMsgID: v.Info.ID, ContactName: utils.WaGetContactName(jid),
-		Text: text, Media: media, ReplyTo: replyTo, EditOf: editOf,
+		Username: utils.WaGetContactUsername(jid),
+		Text:     text, Media: media, ReplyTo: replyTo, EditOf: editOf,
 	})
 	if err != nil {
 		logger.Error("agent link: could not queue customer message", zap.Error(err))

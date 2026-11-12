@@ -219,7 +219,7 @@ type CustomerInput struct {
 	TopicID     int64
 	HubMsgID    string
 	ContactName string
-	Username    string // the Telegram username, without the @
+	Username    string // the Telegram or WhatsApp username, without the @
 	Text        string
 	Media       []Media
 	ReplyTo     string
