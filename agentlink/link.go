@@ -30,6 +30,8 @@ type LinkOptions struct {
 	Channels   []string
 	// Features is what hello declares (protocol section 5d). Empty declares none.
 	Features []string
+	// CustomersChatID is announced in hello; empty (no target chat) omits it.
+	CustomersChatID string
 	// Presence receives the validated `presence` frames. Nil drops them.
 	Presence PresenceSink
 	// Lazada receives `lz_poll` frames and a poll of every session after each
@@ -234,7 +236,7 @@ func (l *Link) session(ctx context.Context) (welcomed bool, err error) {
 
 	// Handshake: hello, then nothing else until welcome.
 	hello, err := NewEnvelope(NewULID(l.clock.Now()), TypeHello, l.clock.Now(), Hello{
-		HubID: l.opt.HubID, Protocol: ProtocolVersion, HubVersion: l.opt.HubVersion, Channels: l.opt.Channels, Features: l.opt.Features,
+		HubID: l.opt.HubID, Protocol: ProtocolVersion, HubVersion: l.opt.HubVersion, Channels: l.opt.Channels, Features: l.opt.Features, CustomersChatID: l.opt.CustomersChatID,
 	})
 	if err != nil {
 		return false, err

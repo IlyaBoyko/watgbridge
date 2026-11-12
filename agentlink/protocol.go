@@ -122,6 +122,10 @@ type Hello struct {
 	// Features lists the optional message types this Hub handles (protocol
 	// section 5d). An older Agent ignores the field.
 	Features []string `json:"features,omitempty"`
+	// CustomersChatID is the Telegram group the topics live in, for the Agent's
+	// topic links. Text, because Telegram ids can exceed 2^53; an older Agent
+	// ignores it.
+	CustomersChatID string `json:"customers_chat_id,omitempty"`
 }
 
 // FeaturePresence says the Hub handles `presence` (protocol section 5d).

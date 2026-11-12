@@ -39,6 +39,8 @@ type Deps struct {
 	Clock      Clock
 	Log        *zap.Logger
 	HubVersion string
+	// CustomersChatID is telegram.target_chat_id as text; empty when unset.
+	CustomersChatID string
 	// WAPresence and TGPresence show "typing..." to customers; nil turns that
 	// channel off. Presence holds their timings (tests).
 	WAPresence WAPresence
@@ -130,6 +132,9 @@ func NewHub(cfg Config, d Deps) (*Hub, error) {
 		}
 	}
 	opt.URL, opt.Token, opt.HubID, opt.HubVersion = cfg.URL, cfg.Token, cfg.HubID, d.HubVersion
+	if opt.CustomersChatID == "" {
+		opt.CustomersChatID = d.CustomersChatID
+	}
 	opt.Presence = h.presence
 	if opt.Features == nil {
 		opt.Features = []string{FeaturePresence}

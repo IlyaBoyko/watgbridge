@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"watgbridge/state"
 )
 
 const (
@@ -583,4 +585,43 @@ func TestStoppingTheLinkStopsTyping(t *testing.T) {
 		t.Fatal("the loop survived the link")
 	}
 	settle(t, func() int { return len(waP.Calls()) })
+}
+
+func TestHelloCustomersChatID(t *testing.T) {
+	// Unset is omitted (an old hello), set is text.
+	if _, has := asMap(t, mustJSON(t, Hello{HubID: "pi"})).(map[string]any)["customers_chat_id"]; has {
+		t.Error("empty customers_chat_id must be omitted")
+	}
+	if got := customersChatID(&state.Config{}); got != "" {
+		t.Errorf("zero target chat = %q", got)
+	}
+	cfg := &state.Config{}
+	cfg.Telegram.TargetChatID = -1001234567890
+	if got := customersChatID(cfg); got != "-1001234567890" {
+		t.Errorf("customersChatID = %q", got)
+	}
+	for _, id := range []string{"-1001234567890", ""} {
+		w := newWorld(t)
+		got := make(chan Hello, 1)
+		a := newFakeAgent(t, func(s *agentSession) {
+			var hp Hello
+			_ = json.Unmarshal(s.handshake().Payload, &hp)
+			got <- hp
+		})
+		d := w.deps()
+		d.CustomersChatID = id
+		h, err := NewHub(Config{Enabled: true, URL: a.URL(), Token: "secret-token", HubID: "pi-test", OutboxMaxAgeDays: 7}, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		startLink(t, h)
+		select {
+		case hp := <-got:
+			if hp.CustomersChatID != id {
+				t.Errorf("hello customers_chat_id = %q, want %q", hp.CustomersChatID, id)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("no hello")
+		}
+	}
 }

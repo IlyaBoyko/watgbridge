@@ -2,6 +2,7 @@ package agentlink
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -36,18 +37,19 @@ func Start(ctx context.Context, customer CustomerChannel, lazada LazadaChannel) 
 		HubID:            cfg.Agent.HubID,
 		OutboxMaxAgeDays: cfg.Agent.OutboxMaxAgeDays,
 	}, Deps{
-		DB:         state.State.Database,
-		Bridge:     bridgeState{},
-		WA:         waSender{},
-		Customer:   customer,
-		Lazada:     lazada,
-		WAPresence: waPresence{},
-		TGPresence: typingOf(customer),
-		MarkRead:   readReceiptHook(cfg),
-		Topics:     topicPoster{},
-		Notifier:   ownerNotifier{},
-		Log:        state.State.Logger.Named("agentlink"),
-		HubVersion: state.WATGBRIDGE_VERSION,
+		DB:              state.State.Database,
+		Bridge:          bridgeState{},
+		WA:              waSender{},
+		Customer:        customer,
+		Lazada:          lazada,
+		WAPresence:      waPresence{},
+		TGPresence:      typingOf(customer),
+		MarkRead:        readReceiptHook(cfg),
+		Topics:          topicPoster{},
+		Notifier:        ownerNotifier{},
+		Log:             state.State.Logger.Named("agentlink"),
+		HubVersion:      state.WATGBRIDGE_VERSION,
+		CustomersChatID: customersChatID(cfg),
 	})
 	if err != nil {
 		return err
@@ -55,6 +57,14 @@ func Start(ctx context.Context, customer CustomerChannel, lazada LazadaChannel) 
 	current.Store(h)
 	h.Start(ctx)
 	return nil
+}
+
+// customersChatID is the customers group id for hello; empty when none is set.
+func customersChatID(cfg *state.Config) string {
+	if cfg.Telegram.TargetChatID == 0 {
+		return ""
+	}
+	return strconv.FormatInt(cfg.Telegram.TargetChatID, 10)
 }
 
 // readReceiptHook is the executor's MarkRead: the bridge's read-receipt helper

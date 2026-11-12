@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "id": "01JB0000000000000000000021",
+  "type": "hello",
+  "ts": "2026-11-12T09:30:12.345Z",
+  "payload": {
+    "hub_id": "pi-my",
+    "protocol": 1,
+    "hub_version": "1.13.11-clarus.3",
+    "channels": ["wa", "tg", "lz"],
+    "features": ["presence", "lz_poll", "lz_auth", "translation"],
+    "customers_chat_id": "-1001234567890"
+  }
+}
